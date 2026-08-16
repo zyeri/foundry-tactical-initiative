@@ -1,0 +1,193 @@
+# Tactical Initiative
+
+A FoundryVTT v13 module for the D&D 5e (`dnd5e`) system that replaces default
+initiative with tag-based behavior. Every actor is tagged **Player**, **Boss**, or
+**Mob**, and initiative is rerolled for all combatants at combat start and at the
+start of every new round.
+
+- **Player** - the owning player is prompted each round to **Rush** (+3 initiative,
+  -1 to attacks/saves/checks), **March** (normal), or **Hunker Down** (-6 initiative,
+  +2 to attacks/saves/checks). The -1/+2 applies via a real Active Effect.
+- **Boss** - never rolls; acts once before all other combatants and once after them
+  (two combatant entries per boss).
+- **Mob** - rolls initiative normally.
+
+## Requirements
+
+- FoundryVTT **v13**.
+- D&D 5e system (`dnd5e`) **4.0.0+**.
+
+## Install
+
+Repository: <https://github.com/zyeri/foundry-tactical-initiative>
+
+The module folder Foundry loads must contain the built files: `module.json`,
+`scripts/main.js`, `styles/tactical-initiative.css`, `lang/en.json`. `scripts/main.js`
+is checked into the repo, so a plain clone is already installable - you only need to
+build if you change the TypeScript in `src/`.
+
+Your Foundry **user data** folder (`<FoundryUserData>`) contains `Data/modules/`. Find
+it from Foundry's **Configuration** screen ("User Data Path"). On Windows it is usually:
+
+```
+C:\Users\<you>\AppData\Local\FoundryVTT
+```
+
+### Option A - Manifest URL (Foundry's installer)
+
+1. In Foundry: **Add-on Modules -> Install Module**.
+2. Paste this into **Manifest URL** and click **Install**:
+
+   ```
+   https://raw.githubusercontent.com/zyeri/foundry-tactical-initiative/main/module.json
+   ```
+
+   This works once a GitHub **Release** with a packaged `tactical-initiative.zip` asset
+   exists (the manifest's `download` points at the latest release). Until then, use
+   Option B or C.
+
+### Option B - Clone directly into modules (recommended for now)
+
+Clone the repo straight into your modules folder, renaming it to the module id
+`tactical-initiative`.
+
+Windows (PowerShell):
+
+```powershell
+cd "$env:LOCALAPPDATA\FoundryVTT\Data\modules"
+git clone https://github.com/zyeri/foundry-tactical-initiative.git tactical-initiative
+```
+
+macOS/Linux:
+
+```bash
+cd ~/.local/share/FoundryVTT/Data/modules   # adjust to your user data path
+git clone https://github.com/zyeri/foundry-tactical-initiative.git tactical-initiative
+```
+
+Then restart Foundry (or reload the world) and enable **Tactical Initiative** in
+**Game Settings -> Manage Modules**.
+
+### Option C - Build from source, then copy
+
+```bash
+git clone https://github.com/zyeri/foundry-tactical-initiative.git
+cd foundry-tactical-initiative
+npm install
+npm run check    # typecheck + tests + build (emits scripts/main.js)
+```
+
+Then copy the folder into `Data/modules/` as `tactical-initiative`. Windows PowerShell,
+run from the cloned repo root:
+
+```powershell
+Copy-Item -Recurse -Force -Exclude node_modules,.git . "$env:LOCALAPPDATA\FoundryVTT\Data\modules\tactical-initiative"
+```
+
+`npm run build` compiles `src/*.ts` into `scripts/main.js` (the file Foundry loads).
+Foundry does not run TypeScript, so always ship the built `scripts/main.js` - re-run
+`npm run build` after any change under `src/`.
+
+### Verify the install
+
+After enabling the module, open the browser console (F12) and confirm you see:
+
+```
+tactical-initiative | initialized
+```
+
+## Usage
+
+1. **Tag your actors.** Right-click a combatant in the combat tracker and pick
+   **Tactical: tag as Player / Boss / Mob**. A best-effort tag dropdown also appears
+   in the actor sheet window header. Defaults if never tagged: `character` actors are
+   Players, everything else is a Mob. Retagging takes effect at the next roll.
+2. **Start combat.** Initiative is rolled for everyone by tag. Players get a dialog on
+   their own screen; if a player is offline or does not answer within the timeout
+   (**Game Settings -> Configure Settings -> Tactical Initiative**, default 30s), they
+   default to March and a chat note is posted.
+3. **Each new round** re-runs the whole process: prior Rush/Hunker effects are removed
+   and everyone rerolls.
+
+Turn the **Skip Defeated** combat setting on so a defeated boss's two entries are both
+skipped.
+
+## Assumptions log
+
+The exact v13/dnd5e API surface can shift between point releases. Where a signature was
+uncertain, the most likely current API was chosen and isolated so it is easy to update:
+
+1. **Player query.** Uses the v13 socketless query mechanism:
+   `CONFIG.queries["tactical-initiative.chooseInitiative"]` plus
+   `user.query(name, data, { timeout })`. The signature is confirmed against the
+   Foundry v13 API docs. What an elapsed timeout or an offline user does
+   (reject vs. resolve `undefined`) is not documented, so the module guards on
+   `user.active`, wraps the call in try/catch, and treats any non-choice result as
+   "no answer" -> March. See `src/adapter/player-query.ts`.
+2. **dnd5e initiative roll.** Uses `combatant.getInitiativeRoll()` (dnd5e Combatant5e)
+   when available, falling back to `actor.getInitiativeRoll()` and finally to
+   `new Roll("1d20 + @attributes.init.total")`. This respects init bonuses and the
+   Alert feat rather than hand-building a formula. See `src/adapter/foundry-adapter.ts`.
+3. **Boss double-turn** is implemented as two combatant entries sharing the boss's
+   token, sorted to `+10000-rank` (start) and `-10000-rank` (end). If a future Foundry
+   dedupes combatants by token, this is the piece to revisit.
+4. **Active Effect.** The -1/+2 is applied as ADD-mode changes to the dnd5e bonus
+   paths `system.bonuses.{mwak,rwak,msak,rsak}.attack` and
+   `system.bonuses.abilities.{check,save}`. If dnd5e renames these, update
+   `DND5E_BONUS_KEYS` in `src/constants.ts`.
+5. **Tag UI.** The combat-tracker context menu (`getCombatTrackerEntryContext`) is the
+   guaranteed path; the actor-sheet header dropdown (`renderActorSheet` /
+   `renderActorSheetV2`) is best-effort and fails silently if the header DOM differs.
+6. **Double-fire guard.** `combatStart` and `combatRound` can both fire for round 1 in
+   some versions; a per-combat, per-round guard makes the reroll idempotent so players
+   are prompted exactly once. After each reroll the combat turn pointer is reset to the
+   top of the re-sorted order (`combat.update({ turn: 0 })`).
+7. **Effects target world actors.** Temporary effects are applied via
+   `game.actors.get(actorId)`, which is the linked-actor case (normal for player PCs,
+   the only tag that gets effects). A player-tagged *unlinked* token would receive the
+   effect on its base world actor rather than the token's synthetic actor. Not handled;
+   noted here as a known limitation.
+
+## Manual test checklist
+
+Automated tests cover the pure logic and the roll-cycle orchestration, but NOT the live
+Foundry integration. Run this checklist in a v13 + dnd5e world after any Foundry/dnd5e
+upgrade. Items 4, 6, and 11 are the ones no unit test can catch.
+
+1. **Tag each type.** Right-click three combatants; tag one Player, one Boss, one Mob.
+   Confirm the tag sticks (reopen the menu / sheet).
+2. **Combat start rolls (SMOKE - exactly once).** Start combat with one Player.
+   Confirm the choice dialog appears **exactly once** (not twice). Then confirm the Mob
+   rolled a normal value, the Player rolled with their adjustment, and the Boss did not
+   roll.
+3. **Round-2 reroll with a changed choice.** Advance to a new round. Confirm everyone's
+   initiative clears and rerolls, and a Player who picked Rush last round can pick
+   Hunker Down this round and gets the new value.
+4. **Rush/Hunker effect application (SMOKE).** Have a Player pick Rush. Confirm a
+   "Rushing" effect icon appears on the token AND an attack/save/check d20 shows -1.
+   Repeat with Hunker Down and confirm +2.
+5. **Effect removal.** Advance a round (or end combat). Confirm the previous round's
+   Rush/Hunker effect is gone and no longer modifies rolls.
+6. **Boss double turn with 2+ bosses (SMOKE).** Tag two actors Boss. Start combat.
+   Confirm each boss has two tracker entries, all four sort as
+   BossA-start, BossB-start, ...normal rolls..., BossA-end, BossB-end, and each boss
+   token actually gets two turns as the tracker advances.
+7. **Mid-combat join.** With combat running, drop a new token in and add it to combat.
+   Confirm a Mob rolls immediately, a Player is prompted immediately, and a Boss gets
+   its two entries.
+8. **Player-offline timeout.** Have a Player disconnect (or never answer). Confirm that
+   after the timeout they default to March, a chat note is posted, and combat proceeds.
+9. **Choosing indicator.** While a Player's dialog is open, confirm the GM's tracker row
+   for that combatant is highlighted, and the highlight clears once they answer.
+10. **Combat-end cleanup.** End/delete the combat. Confirm all module effects are
+    removed from every actor and no duplicate boss entries linger.
+11. **Round-2 turn pointer (SMOKE).** After the round-2 reroll, confirm play resumes on
+    the correct combatant (the highlighted current turn is not off by one).
+
+## Development
+
+- `src/logic/*` - pure, unit-tested functions.
+- `src/service.ts` - initiative orchestration, tested against an in-memory fake port.
+- `src/adapter/*`, `src/main.ts` - the Foundry glue (manual-checklist coverage).
+- See `docs/superpowers/specs/` and `docs/superpowers/plans/` for the design and plan,
+  and `FUTURE_WORK.md` for the planned full mock harness.

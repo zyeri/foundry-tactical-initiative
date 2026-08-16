@@ -1,0 +1,26 @@
+{
+  "TACTICAL_INITIATIVE.Settings.PlayerTimeout.Name": "Player choice timeout (seconds)",
+  "TACTICAL_INITIATIVE.Settings.PlayerTimeout.Hint": "How long to wait for a player to choose Rush / March / Hunker Down before defaulting to March.",
+
+  "TACTICAL_INITIATIVE.Tag.Player": "Player",
+  "TACTICAL_INITIATIVE.Tag.Boss": "Boss",
+  "TACTICAL_INITIATIVE.Tag.Mob": "Mob",
+
+  "TACTICAL_INITIATIVE.Dialog.Title": "Tactical Initiative",
+  "TACTICAL_INITIATIVE.Dialog.Prompt": "{name}, choose your approach for this round:",
+
+  "TACTICAL_INITIATIVE.Choice.Rush.Label": "Rush",
+  "TACTICAL_INITIATIVE.Choice.Rush.Hint": "+3 initiative, but -1 to attacks, saves, and checks this round.",
+  "TACTICAL_INITIATIVE.Choice.March.Label": "March",
+  "TACTICAL_INITIATIVE.Choice.March.Hint": "Normal initiative, no penalty or bonus.",
+  "TACTICAL_INITIATIVE.Choice.Hunker.Label": "Hunker Down",
+  "TACTICAL_INITIATIVE.Choice.Hunker.Hint": "-6 initiative, but +2 to attacks, saves, and checks this round.",
+
+  "TACTICAL_INITIATIVE.Effect.Rush": "Rushing (Tactical Initiative)",
+  "TACTICAL_INITIATIVE.Effect.Hunker": "Hunkered Down (Tactical Initiative)",
+
+  "TACTICAL_INITIATIVE.Chat.DefaultedToMarch": "{name} did not choose in time and defaults to March.",
+
+  "TACTICAL_INITIATIVE.Menu.TagAs": "Tactical: tag as {tag}",
+  "TACTICAL_INITIATIVE.Menu.SheetTitle": "Tactical Initiative tag"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "tactical-initiative",
+  "version": "1.0.0",
+  "description": "Tag-based initiative for FoundryVTT v13 + D&D 5e.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "node esbuild.config.mjs",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

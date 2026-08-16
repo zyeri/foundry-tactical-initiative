@@ -1,0 +1,38 @@
+/* Tactical Initiative styles */
+
+/* Combat tracker: highlight a row whose player is still choosing. */
+.tactical-initiative-choosing {
+  outline: 2px solid var(--color-warning, #d9a520);
+  outline-offset: -2px;
+  animation: tactical-initiative-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes tactical-initiative-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Sheet header: the injected tag dropdown. */
+select.tactical-initiative-tag-select {
+  margin-left: 0.5em;
+  max-width: 8em;
+  height: 1.6em;
+  font-size: var(--font-size-12, 12px);
+  flex: 0 0 auto;
+}
+
+/* Player choice dialog: list of the three options. */
+.tactical-initiative-choices {
+  margin: 0.25em 0 0;
+  padding-left: 1.2em;
+  list-style: disc;
+}
+
+.tactical-initiative-choices li {
+  margin: 0.15em 0;
+}

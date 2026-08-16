@@ -1,0 +1,39 @@
+{
+  "id": "tactical-initiative",
+  "title": "Tactical Initiative",
+  "description": "Tag-based initiative for D&D 5e: Players choose Rush / March / Hunker Down (with auto Active Effects), Bosses act at the start and end of every round, and Mobs roll normally. Rerolls for everyone at combat start and each new round.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13",
+    "maximum": "13"
+  },
+  "authors": [
+    { "name": "Tactical Initiative" }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system",
+        "compatibility": { "minimum": "4.0.0" }
+      }
+    ]
+  },
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/tactical-initiative.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "url": "https://github.com/zyeri/foundry-tactical-initiative",
+  "manifest": "https://raw.githubusercontent.com/zyeri/foundry-tactical-initiative/main/module.json",
+  "download": "https://github.com/zyeri/foundry-tactical-initiative/releases/latest/download/tactical-initiative.zip"
+}
