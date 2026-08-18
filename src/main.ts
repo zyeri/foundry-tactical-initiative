@@ -6,7 +6,11 @@
 
 import { registerHooks } from "./adapter/hooks";
 import { registerQueryHandler } from "./adapter/player-query";
-import { registerSheetTagControl, registerTrackerContextMenu } from "./adapter/tagging-ui";
+import {
+  registerActorDirectoryContextMenu,
+  registerSheetTagControl,
+  registerTrackerContextMenu
+} from "./adapter/tagging-ui";
 import { MODULE_ID } from "./constants";
 import { registerSettings } from "./settings";
 
@@ -15,6 +19,7 @@ Hooks.once("init", (): void => {
   registerQueryHandler();
   registerHooks();
   registerTrackerContextMenu();
+  registerActorDirectoryContextMenu();
   registerSheetTagControl();
   console.log(`${MODULE_ID} | initialized`);
 });

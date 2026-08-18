@@ -595,12 +595,81 @@ function pushTagOptions(options) {
     });
   }
 }
-function registerTrackerContextMenu() {
+function actorIdFromTarget(target) {
+  const element = resolveElement(target);
+  if (!element) return null;
+  const direct = element.dataset["entryId"] ?? element.dataset["documentId"];
+  if (typeof direct === "string" && direct.length > 0) return direct;
+  const ancestor = element.closest("[data-entry-id]");
+  const id = ancestor?.dataset["entryId"];
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+async function retagActor(actorId, tag) {
+  const actor = game.actors?.get(actorId) ?? null;
+  if (!actor) return;
+  await writeActorTag(actor, tag);
+  for (const combat of game.combats?.contents ?? []) {
+    const combatant = combat.combatants.contents.find((c) => c.actorId === actorId);
+    if (combatant) await reconcileBossOnRetag(combatant, combat);
+  }
+}
+function pushActorTagOptions(options) {
+  for (const tag of TAGS) {
+    options.push({
+      name: game.i18n.format("TACTICAL_INITIATIVE.Menu.TagAs", {
+        tag: game.i18n.localize(`TACTICAL_INITIATIVE.Tag.${capitalize(tag)}`)
+      }),
+      icon: `<i class="fas fa-flag"></i>`,
+      condition: () => game.user?.isGM === true,
+      callback: (target) => {
+        const id = actorIdFromTarget(target);
+        if (id) void retagActor(id, tag);
+      }
+    });
+  }
+}
+function registerActorDirectoryContextMenu() {
   const handler = (_appOrHtml, options) => {
-    pushTagOptions(options);
+    pushActorTagOptions(options);
   };
-  Hooks.on("getCombatantContextOptions", handler);
-  Hooks.on("getCombatTrackerEntryContext", handler);
+  Hooks.on("getActorContextOptions", handler);
+  Hooks.on("getActorDirectoryEntryContext", handler);
+}
+var ENTRY_CONTEXT_PATCHED = "__tacticalInitiativeEntryContextPatched";
+var ENTRY_CONTEXT_METHOD = "_getEntryContextOptions";
+function trackerPrototype() {
+  const config = CONFIG;
+  const fromClass = config.ui?.combat?.prototype;
+  if (fromClass && typeof fromClass === "object") return fromClass;
+  const directory = game.combats?.directory;
+  return directory ? Object.getPrototypeOf(directory) : null;
+}
+function tryPatchTracker() {
+  try {
+    const proto = trackerPrototype();
+    if (!proto) return false;
+    if (proto[ENTRY_CONTEXT_PATCHED] === true) return true;
+    const original = proto[ENTRY_CONTEXT_METHOD];
+    if (typeof original !== "function") return false;
+    const wrapped = original;
+    proto[ENTRY_CONTEXT_METHOD] = function(...args) {
+      const entries = wrapped.apply(this, args) ?? [];
+      pushTagOptions(entries);
+      return entries;
+    };
+    proto[ENTRY_CONTEXT_PATCHED] = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+function registerTrackerContextMenu() {
+  Hooks.once("ready", () => {
+    if (tryPatchTracker()) return;
+    Hooks.on("getCombatantContextOptions", (_appOrHtml, options) => {
+      pushTagOptions(options);
+    });
+  });
 }
 function registerSheetTagControl() {
   const handler = (app, html) => {
@@ -646,6 +715,7 @@ Hooks.once("init", () => {
   registerQueryHandler();
   registerHooks();
   registerTrackerContextMenu();
+  registerActorDirectoryContextMenu();
   registerSheetTagControl();
   console.log(`${MODULE_ID} | initialized`);
 });

@@ -103,10 +103,12 @@ tactical-initiative | initialized
 
 ## Usage
 
-1. **Tag your actors.** Right-click a combatant in the combat tracker and pick
-   **Tactical: tag as Player / Boss / Mob**. A best-effort tag dropdown also appears
-   in the actor sheet window header. Defaults if never tagged: `character` actors are
-   Players, everything else is a Mob. Retagging takes effect at the next roll.
+1. **Tag your actors.** Two ways: right-click a combatant in the combat tracker, or
+   right-click an actor in the **Actors sidebar**, and pick **Tactical: tag as Player /
+   Boss / Mob**. The Actors-sidebar menu is the reliable path when an alternative sheet
+   or tracker module is installed. A best-effort tag dropdown also appears in the core
+   actor-sheet window header. Defaults if never tagged: `character` actors are Players,
+   everything else is a Mob. Retagging takes effect at the next roll.
 2. **Start combat.** Initiative is rolled for everyone by tag. Players get a dialog on
    their own screen; if a player is offline or does not answer within the timeout
    (**Game Settings -> Configure Settings -> Tactical Initiative**, default 30s), they
@@ -143,11 +145,19 @@ uncertain, the most likely current API was chosen and isolated so it is easy to 
    v13 uses root `changes` with numeric `mode` (2 = ADD); v14 uses `system.changes`
    with string `type` (`"add"`), selected via `game.release.generation` in
    `applyEffect` (`src/adapter/foundry-adapter.ts`) using `toV14Changes`.
-5. **Tag UI.** The combat-tracker context menu is the guaranteed path. The hook was
-   renamed when the tracker became ApplicationV2 in v13, so the module registers both
-   `getCombatantContextOptions` (v13+) and `getCombatTrackerEntryContext` (v12 legacy);
-   an inert hook is harmless. The actor-sheet header dropdown (`renderActorSheet` /
-   `renderActorSheetV2`) is best-effort and fails silently if the header DOM differs.
+5. **Tag UI.** Three surfaces, most robust first:
+   - **Combat-tracker menu** (right-click a combatant). Instead of the
+     `getCombatantContextOptions` hook - which replacement trackers like *Carousel
+     Combat Tracker* (`combat-tracker-dock`) never fire - the module wraps
+     `CombatTracker#_getEntryContextOptions`, the method both the core sidebar and
+     those trackers call. Falls back to the hook if the method is unavailable.
+   - **Actors-directory menu** (right-click an actor in the sidebar), via
+     `getActorContextOptions`. Sheet-independent, so it works regardless of the
+     actor-sheet module (core dnd5e, *Tidy 5e*, ...). This is the reliable way to
+     tag an actor outside combat.
+   - **Actor-sheet header dropdown** (`renderActorSheet` / `renderActorSheetV2`) is
+     best-effort for the core sheet and fails silently when another sheet module
+     (e.g. Tidy 5e) replaces the header DOM. Use the directory menu instead there.
 6. **Double-fire guard.** `combatStart` and `combatRound` can both fire for round 1 in
    some versions; a per-combat, per-round guard makes the reroll idempotent so players
    are prompted exactly once. After each reroll the combat turn pointer is reset to the
@@ -167,8 +177,11 @@ can catch. On v14 specifically, verify item 1 (the tag context menu actually app
 and item 4 (the effect's `system.changes` apply with no deprecation warning in the
 console) — both exercise the v14-specific code paths.
 
-1. **Tag each type.** Right-click three combatants; tag one Player, one Boss, one Mob.
-   Confirm the tag sticks (reopen the menu / sheet).
+1. **Tag each type.** Right-click three combatants in the tracker; tag one Player, one
+   Boss, one Mob. Confirm the tag sticks (reopen the menu). Also confirm the same menu
+   appears when right-clicking an actor in the **Actors sidebar**, and (with a
+   replacement tracker such as Carousel Combat Tracker active) that the tracker menu
+   still appears on its combatant entries.
 2. **Combat start rolls (SMOKE - exactly once).** Start combat with one Player.
    Confirm the choice dialog appears **exactly once** (not twice). Then confirm the Mob
    rolled a normal value, the Player rolled with their adjustment, and the Boss did not
