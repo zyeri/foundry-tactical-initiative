@@ -5,8 +5,8 @@
  * checklist and the assumptions log (see README "Assumptions").
  */
 
-import { FLAGS, MODULE_ID, type Choice } from "../constants";
-import { effectChangesFor } from "../logic/effects";
+import { FLAGS, MODULE_ID, V14_GENERATION, type Choice } from "../constants";
+import { effectChangesFor, toV14Changes } from "../logic/effects";
 import type { CombatantView, FoundryPort } from "../types";
 import { requestChoiceFromOwner } from "./player-query";
 import { readCombatantTag } from "./tags";
@@ -89,16 +89,20 @@ export class FoundryAdapter implements FoundryPort {
     const actor = this.actor(actorId);
     if (!actor) return;
     const label = game.i18n.localize(`TACTICAL_INITIATIVE.Effect.${choice === "rush" ? "Rush" : "Hunker"}`);
-    await actor.createEmbeddedDocuments("ActiveEffect", [
-      {
-        name: label,
-        img: EFFECT_ICON[choice === "rush" ? "rush" : "hunker"],
-        origin: actor.uuid,
-        disabled: false,
-        changes,
-        flags: { [MODULE_ID]: { [FLAGS.TEMP_EFFECT]: true } }
-      }
-    ]);
+    const base = {
+      name: label,
+      img: EFFECT_ICON[choice === "rush" ? "rush" : "hunker"],
+      origin: actor.uuid,
+      disabled: false,
+      flags: { [MODULE_ID]: { [FLAGS.TEMP_EFFECT]: true } }
+    };
+    // Foundry v14 moved effect changes from the document root (numeric `mode`) to
+    // `system.changes` (string `type`). Emit the shape the running core expects.
+    const data =
+      (game.release?.generation ?? 0) >= V14_GENERATION
+        ? { ...base, system: { changes: toV14Changes(changes) } }
+        : { ...base, changes };
+    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
   }
 
   public async rollInitiativeValue(combatantId: string): Promise<number> {

@@ -37,6 +37,8 @@ var DND5E_BONUS_KEYS = [
   "system.bonuses.abilities.save"
 ];
 var ACTIVE_EFFECT_MODE_ADD = 2;
+var ACTIVE_EFFECT_TYPE_ADD = "add";
+var V14_GENERATION = 14;
 var BOSS_START_BASE = 1e4;
 var BOSS_END_BASE = -1e4;
 var QUERY_CHOOSE = `${MODULE_ID}.chooseInitiative`;
@@ -287,6 +289,14 @@ function effectChangesFor(choice) {
     priority: 20
   }));
 }
+function toV14Changes(changes) {
+  return changes.map(({ key, value, priority }) => ({
+    key,
+    type: ACTIVE_EFFECT_TYPE_ADD,
+    value,
+    priority
+  }));
+}
 
 // src/adapter/player-query.ts
 function toChoiceOrNull(value) {
@@ -407,16 +417,15 @@ var FoundryAdapter = class {
     const actor = this.actor(actorId);
     if (!actor) return;
     const label = game.i18n.localize(`TACTICAL_INITIATIVE.Effect.${choice === "rush" ? "Rush" : "Hunker"}`);
-    await actor.createEmbeddedDocuments("ActiveEffect", [
-      {
-        name: label,
-        img: EFFECT_ICON[choice === "rush" ? "rush" : "hunker"],
-        origin: actor.uuid,
-        disabled: false,
-        changes,
-        flags: { [MODULE_ID]: { [FLAGS.TEMP_EFFECT]: true } }
-      }
-    ]);
+    const base = {
+      name: label,
+      img: EFFECT_ICON[choice === "rush" ? "rush" : "hunker"],
+      origin: actor.uuid,
+      disabled: false,
+      flags: { [MODULE_ID]: { [FLAGS.TEMP_EFFECT]: true } }
+    };
+    const data = (game.release?.generation ?? 0) >= V14_GENERATION ? { ...base, system: { changes: toV14Changes(changes) } } : { ...base, changes };
+    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
   }
   async rollInitiativeValue(combatantId) {
     const combatant = this.combatant(combatantId);
@@ -571,22 +580,27 @@ async function retagCombatant(combatantId, tag) {
   await writeActorTag(location.combatant.actor, tag);
   await reconcileBossOnRetag(location.combatant, location.combat);
 }
+function pushTagOptions(options) {
+  for (const tag of TAGS) {
+    options.push({
+      name: game.i18n.format("TACTICAL_INITIATIVE.Menu.TagAs", {
+        tag: game.i18n.localize(`TACTICAL_INITIATIVE.Tag.${capitalize(tag)}`)
+      }),
+      icon: `<i class="fas fa-flag"></i>`,
+      condition: () => game.user?.isGM === true,
+      callback: (target) => {
+        const id = combatantIdFromTarget(target);
+        if (id) void retagCombatant(id, tag);
+      }
+    });
+  }
+}
 function registerTrackerContextMenu() {
-  Hooks.on("getCombatTrackerEntryContext", (_html, options) => {
-    for (const tag of TAGS) {
-      options.push({
-        name: game.i18n.format("TACTICAL_INITIATIVE.Menu.TagAs", {
-          tag: game.i18n.localize(`TACTICAL_INITIATIVE.Tag.${capitalize(tag)}`)
-        }),
-        icon: `<i class="fas fa-flag"></i>`,
-        condition: () => game.user?.isGM === true,
-        callback: (target) => {
-          const id = combatantIdFromTarget(target);
-          if (id) void retagCombatant(id, tag);
-        }
-      });
-    }
-  });
+  const handler = (_appOrHtml, options) => {
+    pushTagOptions(options);
+  };
+  Hooks.on("getCombatantContextOptions", handler);
+  Hooks.on("getCombatTrackerEntryContext", handler);
 }
 function registerSheetTagControl() {
   const handler = (app, html) => {

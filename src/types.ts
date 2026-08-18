@@ -22,6 +22,22 @@ export interface EffectChange {
 }
 
 /**
+ * A single Active Effect change entry in the Foundry v14+ schema, where numeric
+ * `mode` was replaced by a string `type` and the `changes` array lives under
+ * `system.changes`. Otherwise identical to {@link EffectChange}.
+ */
+export interface EffectChangeV14 {
+  /** The document path the change targets. */
+  key: string;
+  /** The v14 change type; this module always uses `"add"`. */
+  type: string;
+  /** The change value as a formula string, e.g. `"-1"` or `"+2"`. */
+  value: string;
+  /** The application priority; higher applies later. */
+  priority: number;
+}
+
+/**
  * A Foundry-agnostic snapshot of a combatant, carrying only what the
  * orchestration service needs to decide initiative behavior.
  */

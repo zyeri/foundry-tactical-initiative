@@ -106,8 +106,16 @@ interface FoundryI18n {
   format(key: string, data: Record<string, string>): string;
 }
 
+/** Foundry's release/version descriptor (subset). */
+interface FoundryRelease {
+  /** The major generation number, e.g. `13` or `14`. */
+  readonly generation: number;
+}
+
 /** The global game object (subset). */
 interface FoundryGame {
+  /** The running Foundry release; used to branch on version-specific schemas. */
+  readonly release?: FoundryRelease;
   readonly user: FoundryUser | null;
   readonly users: FoundryUsers | null;
   readonly actors: FoundryCollection<FoundryActor> | null;

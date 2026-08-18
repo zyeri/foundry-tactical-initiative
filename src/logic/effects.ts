@@ -5,11 +5,12 @@
 
 import {
   ACTIVE_EFFECT_MODE_ADD,
+  ACTIVE_EFFECT_TYPE_ADD,
   CHOICE_EFFECT_MODIFIER,
   DND5E_BONUS_KEYS,
   type Choice
 } from "../constants";
-import type { EffectChange } from "../types";
+import type { EffectChange, EffectChangeV14 } from "../types";
 
 /**
  * Format a signed integer as a dnd5e bonus formula string, e.g. `-1` or `+2`.
@@ -40,5 +41,22 @@ export function effectChangesFor(choice: Choice): EffectChange[] {
     mode: ACTIVE_EFFECT_MODE_ADD,
     value,
     priority: 20
+  }));
+}
+
+/**
+ * Convert legacy {@link EffectChange} entries (numeric `mode`) to the Foundry
+ * v14+ {@link EffectChangeV14} shape (string `type`). This module only ever
+ * emits ADD-mode changes, so `mode` maps directly to `"add"`.
+ *
+ * @param changes - Legacy change entries from {@link effectChangesFor}.
+ * @returns The same changes with `mode` replaced by `type: "add"`.
+ */
+export function toV14Changes(changes: EffectChange[]): EffectChangeV14[] {
+  return changes.map(({ key, value, priority }) => ({
+    key,
+    type: ACTIVE_EFFECT_TYPE_ADD,
+    value,
+    priority
   }));
 }

@@ -59,24 +59,43 @@ async function retagCombatant(combatantId: string, tag: Tag): Promise<void> {
 }
 
 /**
+ * Push this module's tag options onto a combat-tracker combatant context menu.
+ * The second hook argument is the options array in both the legacy and current
+ * signatures; per-entry callbacks receive the row (element or jQuery), which
+ * {@link combatantIdFromTarget} resolves either way.
+ *
+ * @param options - The context-menu entry array to append to.
+ */
+function pushTagOptions(options: ContextMenuEntry[]): void {
+  for (const tag of TAGS) {
+    options.push({
+      name: game.i18n.format("TACTICAL_INITIATIVE.Menu.TagAs", {
+        tag: game.i18n.localize(`TACTICAL_INITIATIVE.Tag.${capitalize(tag)}`)
+      }),
+      icon: `<i class="fas fa-flag"></i>`,
+      condition: (): boolean => game.user?.isGM === true,
+      callback: (target: unknown): void => {
+        const id = combatantIdFromTarget(target);
+        if (id) void retagCombatant(id, tag);
+      }
+    });
+  }
+}
+
+/**
  * Register the combat-tracker context-menu options (GM only).
+ *
+ * The combatant-row context hook was renamed when the tracker moved to
+ * ApplicationV2 in v13: `getCombatantContextOptions` is the current name, while
+ * `getCombatTrackerEntryContext` was the v12 name. Both are registered so the
+ * menu appears regardless of core version; a hook that no longer fires is inert.
  */
 export function registerTrackerContextMenu(): void {
-  Hooks.on("getCombatTrackerEntryContext", (_html: unknown, options: ContextMenuEntry[]): void => {
-    for (const tag of TAGS) {
-      options.push({
-        name: game.i18n.format("TACTICAL_INITIATIVE.Menu.TagAs", {
-          tag: game.i18n.localize(`TACTICAL_INITIATIVE.Tag.${capitalize(tag)}`)
-        }),
-        icon: `<i class="fas fa-flag"></i>`,
-        condition: (): boolean => game.user?.isGM === true,
-        callback: (target: unknown): void => {
-          const id = combatantIdFromTarget(target);
-          if (id) void retagCombatant(id, tag);
-        }
-      });
-    }
-  });
+  const handler = (_appOrHtml: unknown, options: ContextMenuEntry[]): void => {
+    pushTagOptions(options);
+  };
+  Hooks.on("getCombatantContextOptions", handler);
+  Hooks.on("getCombatTrackerEntryContext", handler);
 }
 
 /**

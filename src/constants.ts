@@ -89,6 +89,20 @@ export const DND5E_BONUS_KEYS: readonly string[] = [
 export const ACTIVE_EFFECT_MODE_ADD = 2 as const;
 
 /**
+ * ActiveEffect change type ADD for Foundry v14+, where numeric `mode` was
+ * replaced by a string `type` (`CONST.ACTIVE_EFFECT_CHANGE_TYPES`) and the
+ * `changes` array moved from the document root to `system.changes`.
+ */
+export const ACTIVE_EFFECT_TYPE_ADD = "add" as const;
+
+/**
+ * The first Foundry generation that uses the v14 ActiveEffect schema
+ * (`system.changes` with string `type`). Below this the module emits the legacy
+ * root-`changes` + numeric `mode` shape.
+ */
+export const V14_GENERATION = 14 as const;
+
+/**
  * Base initiative values for boss slots. Start slots sort above any normal roll;
  * end slots sort below any normal roll. A per-boss rank is subtracted from each so
  * multiple bosses keep the same relative order at the start and at the end.

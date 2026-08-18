@@ -14,8 +14,13 @@ start of every new round.
 
 ## Requirements
 
-- FoundryVTT **v13**.
-- D&D 5e system (`dnd5e`) **4.0.0+**.
+- FoundryVTT **v13 or v14** (verified against v14).
+- D&D 5e system (`dnd5e`): **4.0.0+** on v13, **5.3.0+** on v14 (earlier dnd5e
+  releases do not run on Foundry v14).
+
+On v14 the module emits Active Effects in the v14 schema (`system.changes` with a
+string `type`); on v13 it emits the legacy shape (root `changes` with a numeric
+`mode`). This is selected automatically from `game.release.generation`.
 
 ## Install
 
@@ -134,9 +139,14 @@ uncertain, the most likely current API was chosen and isolated so it is easy to 
 4. **Active Effect.** The -1/+2 is applied as ADD-mode changes to the dnd5e bonus
    paths `system.bonuses.{mwak,rwak,msak,rsak}.attack` and
    `system.bonuses.abilities.{check,save}`. If dnd5e renames these, update
-   `DND5E_BONUS_KEYS` in `src/constants.ts`.
-5. **Tag UI.** The combat-tracker context menu (`getCombatTrackerEntryContext`) is the
-   guaranteed path; the actor-sheet header dropdown (`renderActorSheet` /
+   `DND5E_BONUS_KEYS` in `src/constants.ts`. The change **shape** is version-gated:
+   v13 uses root `changes` with numeric `mode` (2 = ADD); v14 uses `system.changes`
+   with string `type` (`"add"`), selected via `game.release.generation` in
+   `applyEffect` (`src/adapter/foundry-adapter.ts`) using `toV14Changes`.
+5. **Tag UI.** The combat-tracker context menu is the guaranteed path. The hook was
+   renamed when the tracker became ApplicationV2 in v13, so the module registers both
+   `getCombatantContextOptions` (v13+) and `getCombatTrackerEntryContext` (v12 legacy);
+   an inert hook is harmless. The actor-sheet header dropdown (`renderActorSheet` /
    `renderActorSheetV2`) is best-effort and fails silently if the header DOM differs.
 6. **Double-fire guard.** `combatStart` and `combatRound` can both fire for round 1 in
    some versions; a per-combat, per-round guard makes the reroll idempotent so players
@@ -151,8 +161,11 @@ uncertain, the most likely current API was chosen and isolated so it is easy to 
 ## Manual test checklist
 
 Automated tests cover the pure logic and the roll-cycle orchestration, but NOT the live
-Foundry integration. Run this checklist in a v13 + dnd5e world after any Foundry/dnd5e
-upgrade. Items 4, 6, and 11 are the ones no unit test can catch.
+Foundry integration. Run this checklist in a v13 + dnd5e world **and** a v14 + dnd5e
+5.3+ world after any Foundry/dnd5e upgrade. Items 4, 6, and 11 are the ones no unit test
+can catch. On v14 specifically, verify item 1 (the tag context menu actually appears)
+and item 4 (the effect's `system.changes` apply with no deprecation warning in the
+console) — both exercise the v14-specific code paths.
 
 1. **Tag each type.** Right-click three combatants; tag one Player, one Boss, one Mob.
    Confirm the tag sticks (reopen the menu / sheet).
