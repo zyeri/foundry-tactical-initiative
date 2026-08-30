@@ -21,7 +21,7 @@ import { readCombatantTag } from "./tags";
  *
  * @returns `true` on exactly one connected GM client.
  */
-function isActiveGM(): boolean {
+export function isActiveGM(): boolean {
   return game.user?.isGM === true && game.users?.activeGM === game.user;
 }
 
@@ -31,7 +31,7 @@ function isActiveGM(): boolean {
  * @param label - A short label for diagnostics.
  * @param body - The async work to run.
  */
-function guard(label: string, body: () => Promise<void>): void {
+export function guard(label: string, body: () => Promise<void>): void {
   body().catch((error: unknown) => {
     console.error(`${MODULE_ID} | ${label}`, error);
   });

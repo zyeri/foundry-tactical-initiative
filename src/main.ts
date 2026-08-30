@@ -4,6 +4,7 @@
  * player-choice query handler, runtime hooks, and the tag UIs at `init`.
  */
 
+import { registerCombatEvents } from "./adapter/combat-events";
 import { registerHooks } from "./adapter/hooks";
 import { registerQueryHandler } from "./adapter/player-query";
 import {
@@ -18,6 +19,7 @@ Hooks.once("init", (): void => {
   registerSettings();
   registerQueryHandler();
   registerHooks();
+  registerCombatEvents();
   registerTrackerContextMenu();
   registerActorDirectoryContextMenu();
   registerSheetTagControl();

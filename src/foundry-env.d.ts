@@ -47,6 +47,38 @@ interface FoundryActor {
   getRollData?(): object;
   /** dnd5e Actor5e initiative Roll builder (older/parallel to Combatant5e's). */
   getInitiativeRoll?(formula?: string): FoundryRoll;
+  /** True when this is a synthetic actor backing an unlinked token. */
+  readonly isToken?: boolean;
+  /** For a token actor, its TokenDocument; otherwise null. */
+  readonly token?: FoundryTokenDocument | null;
+  /** dnd5e system data (subset): current hit points. */
+  readonly system?: { attributes?: { hp?: { value?: number } } };
+  /** Tokens for this actor on the active scene. Pass (false, true) for documents. */
+  getActiveTokens(linked?: boolean, document?: boolean): FoundryTokenDocument[];
+}
+
+/** A core TokenDocument (subset used by F4). */
+interface FoundryTokenDocument {
+  readonly id: string;
+  readonly uuid: string;
+  readonly name: string;
+  readonly actorId: string | null;
+  /** The scene this token belongs to. */
+  readonly parent: { id: string } | null;
+  update(data: object): Promise<FoundryTokenDocument>;
+}
+
+/** A ChatMessage document (subset used to capture dnd5e damage cards). */
+interface FoundryChatMessage {
+  readonly speaker?: { actor?: string; alias?: string };
+  readonly flags?: {
+    dnd5e?: {
+      roll?: { type?: string };
+      item?: { uuid?: string };
+      // `uuid` in dnd5e 5.3; a later dnd5e renames the descriptor field to `actor`.
+      targets?: { uuid?: string; actor?: string }[];
+    };
+  };
 }
 
 /** A core/dnd5e Combatant document (subset). */
@@ -119,7 +151,7 @@ interface FoundryGame {
   readonly user: FoundryUser | null;
   readonly users: FoundryUsers | null;
   readonly actors: FoundryCollection<FoundryActor> | null;
-  readonly combats: FoundryCollection<FoundryCombat> | null;
+  readonly combats: (FoundryCollection<FoundryCombat> & { active: FoundryCombat | null }) | null;
   readonly settings: FoundrySettings;
   readonly i18n: FoundryI18n;
 }
@@ -186,6 +218,9 @@ declare const Roll: {
 declare const CONFIG: FoundryConfig;
 declare const ChatMessage: ChatMessageStatic;
 declare const ui: { notifications?: FoundryNotifications };
+
+/** Foundry's synchronous UUID resolver (subset: names for items, docs for tokens). */
+declare function fromUuidSync(uuid: string): { name?: string } | null;
 
 /** The `foundry` global namespace (only the pieces used here). */
 declare const foundry: {
