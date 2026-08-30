@@ -116,5 +116,12 @@ export const QUERY_CHOOSE = `${MODULE_ID}.chooseInitiative` as const;
 /** Module setting keys. */
 export const SETTINGS = {
   /** World setting: seconds to wait for a player's choice before defaulting to March. */
-  PLAYER_TIMEOUT: "playerTimeoutSeconds"
+  PLAYER_TIMEOUT: "playerTimeoutSeconds",
+  /** World setting: whether a boss death posts a public chat callout. */
+  ANNOUNCE_BOSS_DEATH: "announceBossDeath",
+  /** World setting: seconds a recorded damage source stays valid for kill attribution. */
+  KILL_WINDOW: "killAttributionWindowSeconds"
 } as const;
+
+/** Default staleness window (seconds) for F5 kill attribution. */
+export const DEFAULT_KILL_WINDOW_SECONDS = 45 as const;
