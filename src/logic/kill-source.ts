@@ -21,6 +21,54 @@ export interface DamageEvent {
 /** The recorded last-damage source; identical in shape to a {@link DamageEvent}. */
 export type Source = DamageEvent;
 
+/** The subset of a dnd5e chat message this module reads to attribute a kill. */
+export interface DamageCardLike {
+  /** Message flags carrying the dnd5e roll metadata. */
+  flags?: {
+    dnd5e?: {
+      roll?: { type?: string };
+      item?: { uuid?: string };
+      // `uuid` in dnd5e 5.3; a later dnd5e renames the descriptor field to `actor`.
+      targets?: { uuid?: string; actor?: string }[];
+    };
+  };
+  /** The message speaker: the acting actor's id and display alias. */
+  speaker?: { actor?: string; alias?: string };
+}
+
+/**
+ * Distill a dnd5e damage chat card into a {@link DamageEvent}. Returns `null` when
+ * the card is not a damage roll or has no targets - the two cases that cannot
+ * attribute a kill. The item name is resolved through an injected function so this
+ * stays free of Foundry globals.
+ *
+ * @param card - The chat message (only the read fields matter).
+ * @param now - Capture time in epoch milliseconds.
+ * @param resolveItemName - Maps an item UUID to a display name, or `null`.
+ * @returns The distilled event, or `null` when the card cannot attribute.
+ */
+export function parseDamageCard(
+  card: DamageCardLike,
+  now: number,
+  resolveItemName: (itemUuid: string) => string | null
+): DamageEvent | null {
+  const dnd5e = card.flags?.dnd5e;
+  if (!dnd5e || dnd5e.roll?.type !== "damage") return null;
+  const targetUuids = (dnd5e.targets ?? [])
+    .map((target) => target.uuid ?? target.actor)
+    .filter((uuid): uuid is string => typeof uuid === "string");
+  if (targetUuids.length === 0) return null;
+  const speaker = card.speaker ?? {};
+  const itemUuid = dnd5e.item?.uuid;
+  return {
+    attackerName: speaker.alias ?? "",
+    attackerActorId: speaker.actor ?? "",
+    itemName: itemUuid ? resolveItemName(itemUuid) : null,
+    targetUuids,
+    timestamp: now
+  };
+}
+
 /** The resolved credit for a boss death. */
 export interface Attribution {
   /** Display name of the killer. */

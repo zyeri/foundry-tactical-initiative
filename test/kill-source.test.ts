@@ -1,6 +1,7 @@
 import {
   isSelfHit,
   nextSource,
+  parseDamageCard,
   selectAttribution,
   type Source
 } from "../src/logic/kill-source";
@@ -62,6 +63,54 @@ describe("isSelfHit", () => {
 
   it("is false with an empty attacker id", () => {
     expect(isSelfHit("", ["Actor.a1"])).toBe(false);
+  });
+});
+
+describe("parseDamageCard", () => {
+  const resolveItemName = (uuid: string): string | null => (uuid === "Item.gun" ? "GUN" : null);
+
+  const damageCard = {
+    flags: {
+      dnd5e: {
+        roll: { type: "damage" },
+        item: { uuid: "Item.gun" },
+        targets: [{ uuid: "Actor.boss" }]
+      }
+    },
+    speaker: { actor: "rich", alias: "Richard" }
+  };
+
+  it("parses a damage card into a DamageEvent", () => {
+    expect(parseDamageCard(damageCard, 1000, resolveItemName)).toEqual({
+      attackerName: "Richard",
+      attackerActorId: "rich",
+      itemName: "GUN",
+      targetUuids: ["Actor.boss"],
+      timestamp: 1000
+    });
+  });
+
+  it("returns null for a non-damage card", () => {
+    const attack = { ...damageCard, flags: { dnd5e: { ...damageCard.flags.dnd5e, roll: { type: "attack" } } } };
+    expect(parseDamageCard(attack, 1000, resolveItemName)).toBeNull();
+  });
+
+  it("returns null when there are no targets", () => {
+    const noTargets = { ...damageCard, flags: { dnd5e: { ...damageCard.flags.dnd5e, targets: [] } } };
+    expect(parseDamageCard(noTargets, 1000, resolveItemName)).toBeNull();
+  });
+
+  it("falls back to the renamed `actor` target field when `uuid` is absent", () => {
+    const renamed = {
+      ...damageCard,
+      flags: { dnd5e: { ...damageCard.flags.dnd5e, targets: [{ actor: "Actor.boss" }] } }
+    };
+    expect(parseDamageCard(renamed, 1000, resolveItemName)?.targetUuids).toEqual(["Actor.boss"]);
+  });
+
+  it("yields a null item name when the item cannot be resolved", () => {
+    const noItem = { ...damageCard, flags: { dnd5e: { ...damageCard.flags.dnd5e, item: { uuid: "Item.missing" } } } };
+    expect(parseDamageCard(noItem, 1000, resolveItemName)?.itemName).toBeNull();
   });
 });
 
