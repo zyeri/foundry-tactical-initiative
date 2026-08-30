@@ -55,8 +55,8 @@ export class FakeDeathPort implements DeathPort {
   public findCombatantForToken(tokenId: string): CombatantLocation | null {
     return this.combatByToken.get(tokenId) ?? null;
   }
-  public async hideToken(tokenId: string): Promise<void> {
-    this.hidden.push(tokenId);
+  public async hideToken(token: TokenRef): Promise<void> {
+    this.hidden.push(token.id);
   }
   public async removeCombatant(location: CombatantLocation): Promise<void> {
     this.removed.push(location);
@@ -79,17 +79,17 @@ export class FakeDeathPort implements DeathPort {
   public resolveToken(tokenUuid: string): TokenRef | null {
     return this.tokensByUuid.get(tokenUuid) ?? null;
   }
-  public async unhideToken(tokenId: string): Promise<void> {
-    this.unhidden.push(tokenId);
+  public async unhideToken(token: TokenRef): Promise<void> {
+    this.unhidden.push(token.id);
   }
   public combatExists(combatId: string): boolean {
     return this.existingCombats.has(combatId);
   }
-  public combatHasToken(combatId: string, tokenId: string): boolean {
-    return this.combatTokens.has(`${combatId}:${tokenId}`);
+  public combatHasToken(combatId: string, token: TokenRef): boolean {
+    return this.combatTokens.has(`${combatId}:${token.id}`);
   }
-  public async addTokenToCombat(combatId: string, tokenId: string): Promise<void> {
-    this.added.push({ combatId, tokenId });
+  public async addTokenToCombat(combatId: string, token: TokenRef): Promise<void> {
+    this.added.push({ combatId, tokenId: token.id });
   }
   public warnRestoreNoCombat(): void {
     this.warnedNoCombat += 1;

@@ -51,7 +51,7 @@ export interface DeathPort {
   /** Locate a token's combatant across all combats, or `null` when it is in none. */
   findCombatantForToken(tokenId: string): CombatantLocation | null;
   /** Hide a token from players. */
-  hideToken(tokenId: string): Promise<void>;
+  hideToken(token: TokenRef): Promise<void>;
   /** Remove a combatant from its combat. */
   removeCombatant(location: CombatantLocation): Promise<void>;
   /** Whisper the GM a one-click restore link for a removed mob. */
@@ -67,13 +67,13 @@ export interface DeathPort {
   /** Resolve a token UUID to a reference, or `null` when it no longer exists. */
   resolveToken(tokenUuid: string): TokenRef | null;
   /** Un-hide a token. */
-  unhideToken(tokenId: string): Promise<void>;
+  unhideToken(token: TokenRef): Promise<void>;
   /** Whether a combat still exists. */
   combatExists(combatId: string): boolean;
   /** Whether a combat already has a combatant for a token. */
-  combatHasToken(combatId: string, tokenId: string): boolean;
+  combatHasToken(combatId: string, token: TokenRef): boolean;
   /** Add a token to a combat as a new combatant. */
-  addTokenToCombat(combatId: string, tokenId: string): Promise<void>;
+  addTokenToCombat(combatId: string, token: TokenRef): Promise<void>;
   /** Notify the GM that a restore target combat no longer exists. */
   warnRestoreNoCombat(): void;
 }
@@ -132,13 +132,13 @@ export class DeathService {
   public async restoreMob(tokenUuid: string, combatId: string): Promise<void> {
     const token = this.port.resolveToken(tokenUuid);
     if (!token) return;
-    await this.port.unhideToken(token.id);
+    await this.port.unhideToken(token);
     if (!this.port.combatExists(combatId)) {
       this.port.warnRestoreNoCombat();
       return;
     }
-    if (!this.port.combatHasToken(combatId, token.id)) {
-      await this.port.addTokenToCombat(combatId, token.id);
+    if (!this.port.combatHasToken(combatId, token)) {
+      await this.port.addTokenToCombat(combatId, token);
     }
   }
 
@@ -151,7 +151,7 @@ export class DeathService {
     for (const token of this.port.tokensForActor(actor)) {
       const location = this.port.findCombatantForToken(token.id);
       if (!location) continue;
-      await this.port.hideToken(token.id);
+      await this.port.hideToken(token);
       await this.port.removeCombatant(location);
       await this.port.whisperRestore(token, location.combatId);
     }
