@@ -210,10 +210,37 @@ console) — both exercise the v14-specific code paths.
 11. **Round-2 turn pointer (SMOKE).** After the round-2 reroll, confirm play resumes on
     the correct combatant (the highlighted current turn is not off by one).
 
+## Automation rules checklist (F4/F5, v1.2.0)
+
+Run in a live v14 + dnd5e 5.3 world. Probes 1-2 gate the adapter behavior.
+
+1. **Probe - damageActor deltas.** Log `changes` and `actor.system.attributes.hp.value`
+   on a normal hit and on an overkill against a 0-HP actor. Confirm `changes.hp` is
+   clamped so a corpse-overkill does not re-fire. If it is unclamped, switch death
+   detection to a `preUpdateActor` last-seen-HP compare.
+2. **Probe - chat-card flags.** Log `message.flags.dnd5e` and `message.speaker` on a
+   player's damage roll. Confirm `roll.type === "damage"`, `item.uuid`,
+   `targets[].uuid`, and `speaker.alias`/`speaker.actor` match `parseDamageCard`.
+3. **Mob remove + hide.** Tag an UNLINKED token `mob`; drop it to 0 in combat. Only that
+   token hides and leaves the tracker; sibling unlinked copies and untagged NPCs are
+   untouched; the whispered "Restore" button re-adds it. A `mob` dropped OUT of combat is
+   left alone. (Known limit: a LINKED mob auto-removes only when the GM views its scene.)
+4. **Non-active combat.** With two combats, kill a tagged `mob` in the non-active one. It
+   is still removed (across-combats lookup).
+5. **Boss attribution.** Tag an UNLINKED token `boss`; a player kills it with a targeted
+   weapon -> public "X has killed BOSS with their WEAPON!".
+6. **No self-credit.** A boss whose own attack was the last damage card is never credited
+   for its own death.
+7. **Plain fallback.** Kill a boss with an untargeted AoE or a manual HP edit -> public
+   "BOSS has fallen!".
+8. **Toggle + dedupe.** `announceBossDeath` off suppresses the message. With two GMs
+   connected, a boss death posts exactly once.
+
 ## Development
 
 - `src/logic/*` - pure, unit-tested functions.
-- `src/service.ts` - initiative orchestration, tested against an in-memory fake port.
+- `src/service.ts`, `src/death-service.ts` - orchestration, tested against in-memory fake
+  ports (`test/fake-port.ts`, `test/fake-death-port.ts`).
 - `src/adapter/*`, `src/main.ts` - the Foundry glue (manual-checklist coverage).
 - See `docs/superpowers/specs/` and `docs/superpowers/plans/` for the design and plan,
   and `FUTURE_WORK.md` for the planned full mock harness.

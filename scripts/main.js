@@ -44,8 +44,211 @@ var BOSS_END_BASE = -1e4;
 var QUERY_CHOOSE = `${MODULE_ID}.chooseInitiative`;
 var SETTINGS = {
   /** World setting: seconds to wait for a player's choice before defaulting to March. */
-  PLAYER_TIMEOUT: "playerTimeoutSeconds"
+  PLAYER_TIMEOUT: "playerTimeoutSeconds",
+  /** World setting: whether a boss death posts a public chat callout. */
+  ANNOUNCE_BOSS_DEATH: "announceBossDeath",
+  /** World setting: seconds a recorded damage source stays valid for kill attribution. */
+  KILL_WINDOW: "killAttributionWindowSeconds"
 };
+var DEFAULT_KILL_WINDOW_SECONDS = 45;
+
+// src/logic/death.ts
+function crossedToZero(previousHp, newHp) {
+  return previousHp > 0 && newHp <= 0;
+}
+
+// src/logic/hp.ts
+function hpTransition(resultingHp, changes) {
+  return { previousHp: resultingHp - changes.hp, newHp: resultingHp };
+}
+
+// src/logic/kill-message.ts
+function killMessageKey(bossName, attribution) {
+  if (!attribution) {
+    return { key: "TACTICAL_INITIATIVE.Chat.BossDied", data: { boss: bossName } };
+  }
+  if (attribution.itemName === null) {
+    return {
+      key: "TACTICAL_INITIATIVE.Chat.BossKilledNoWeapon",
+      data: { killer: attribution.attackerName, boss: bossName }
+    };
+  }
+  return {
+    key: "TACTICAL_INITIATIVE.Chat.BossKilled",
+    data: { killer: attribution.attackerName, boss: bossName, weapon: attribution.itemName }
+  };
+}
+
+// src/logic/kill-source.ts
+function parseDamageCard(card, now, resolveItemName2) {
+  const dnd5e = card.flags?.dnd5e;
+  if (!dnd5e || dnd5e.roll?.type !== "damage") return null;
+  const targetUuids = (dnd5e.targets ?? []).map((target) => target.uuid ?? target.actor).filter((uuid) => typeof uuid === "string");
+  if (targetUuids.length === 0) return null;
+  const speaker = card.speaker ?? {};
+  const itemUuid = dnd5e.item?.uuid;
+  return {
+    attackerName: speaker.alias ?? "",
+    attackerActorId: speaker.actor ?? "",
+    itemName: itemUuid ? resolveItemName2(itemUuid) : null,
+    targetUuids,
+    timestamp: now
+  };
+}
+function isSelfHit(attackerActorId, targetUuids) {
+  if (attackerActorId === "") return false;
+  const marker = "Actor.";
+  return targetUuids.some((uuid) => {
+    const at = uuid.lastIndexOf(marker);
+    const targetActorId = at >= 0 ? uuid.slice(at + marker.length) : uuid;
+    return targetActorId === attackerActorId;
+  });
+}
+function nextSource(prev, event) {
+  if (event.attackerName === "") return prev;
+  if (event.targetUuids.length === 0) return prev;
+  if (isSelfHit(event.attackerActorId, event.targetUuids)) return prev;
+  return { ...event };
+}
+function selectAttribution(source, deadActorUuid, now, windowMs) {
+  if (!source) return null;
+  if (!source.targetUuids.includes(deadActorUuid)) return null;
+  if (now - source.timestamp > windowMs) return null;
+  return { attackerName: source.attackerName, itemName: source.itemName };
+}
+
+// src/death-service.ts
+var DeathService = class {
+  /**
+   * @param port - The Foundry seam.
+   */
+  constructor(port) {
+    this.port = port;
+  }
+  /** The last real damage source seen this session. */
+  lastSource = null;
+  /**
+   * Fold a parsed damage event into the recorded source (a `null` event is a no-op).
+   *
+   * @param event - The parsed damage event, or `null`.
+   */
+  recordDamage(event) {
+    if (event === null) return;
+    this.lastSource = nextSource(this.lastSource, event);
+  }
+  /** The current recorded damage source (for later consumers). */
+  getLastSource() {
+    return this.lastSource;
+  }
+  /**
+   * React to an actor's HP change: if it just crossed to 0, run the mob and boss
+   * rules that apply.
+   *
+   * @param actor - The damaged actor handle.
+   * @param changes - The signed-delta payload from `dnd5e.damageActor`.
+   */
+  async handleDamage(actor, changes) {
+    const resultingHp = this.port.actorHp(actor);
+    if (resultingHp === null) return;
+    if (resultingHp > 0) return;
+    const { previousHp, newHp } = hpTransition(resultingHp, changes);
+    if (!crossedToZero(previousHp, newHp)) return;
+    if (this.port.isExplicitMob(actor)) await this.handleMob(actor);
+    if (this.port.isBoss(actor)) await this.handleBoss(actor);
+  }
+  /**
+   * Restore a removed mob to its origin combat and un-hide its token.
+   *
+   * @param tokenUuid - The removed token's UUID.
+   * @param combatId - The combat the mob was removed from.
+   */
+  async restoreMob(tokenUuid, combatId) {
+    const token = this.port.resolveToken(tokenUuid);
+    if (!token) return;
+    await this.port.unhideToken(token);
+    if (!this.port.combatExists(combatId)) {
+      this.port.warnRestoreNoCombat();
+      return;
+    }
+    if (!this.port.combatHasToken(combatId, token)) {
+      await this.port.addTokenToCombat(combatId, token);
+    }
+  }
+  /**
+   * F4: remove an explicitly-tagged mob from combat and hide the token(s) that died.
+   *
+   * @param actor - The dead actor handle.
+   */
+  async handleMob(actor) {
+    for (const token of this.port.tokensForActor(actor)) {
+      const location = this.port.findCombatantForToken(token.id);
+      if (!location) continue;
+      await this.port.hideToken(token);
+      await this.port.removeCombatant(location);
+      await this.port.whisperRestore(token, location.combatId);
+    }
+  }
+  /**
+   * F5: post a public, best-effort attributed boss-death callout.
+   *
+   * @param actor - The dead actor handle.
+   */
+  async handleBoss(actor) {
+    if (!this.port.announceBossDeath()) return;
+    const attribution = selectAttribution(
+      this.lastSource,
+      this.port.actorUuid(actor),
+      this.port.now(),
+      this.port.killWindowMs()
+    );
+    const { key, data } = killMessageKey(this.port.actorName(actor), attribution);
+    await this.port.postPublic(this.port.localize(key, data));
+  }
+};
+
+// src/settings.ts
+function registerSettings() {
+  game.settings.register(MODULE_ID, SETTINGS.PLAYER_TIMEOUT, {
+    name: "TACTICAL_INITIATIVE.Settings.PlayerTimeout.Name",
+    hint: "TACTICAL_INITIATIVE.Settings.PlayerTimeout.Hint",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 30,
+    range: { min: 5, max: 300, step: 5 }
+  });
+  game.settings.register(MODULE_ID, SETTINGS.ANNOUNCE_BOSS_DEATH, {
+    name: "TACTICAL_INITIATIVE.Settings.AnnounceBossDeath.Name",
+    hint: "TACTICAL_INITIATIVE.Settings.AnnounceBossDeath.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+  game.settings.register(MODULE_ID, SETTINGS.KILL_WINDOW, {
+    name: "TACTICAL_INITIATIVE.Settings.KillAttributionWindow.Name",
+    hint: "TACTICAL_INITIATIVE.Settings.KillAttributionWindow.Hint",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: DEFAULT_KILL_WINDOW_SECONDS,
+    range: { min: 5, max: 300, step: 5 }
+  });
+}
+function getPlayerTimeoutMs() {
+  const raw = game.settings.get(MODULE_ID, SETTINGS.PLAYER_TIMEOUT);
+  const seconds = typeof raw === "number" && Number.isFinite(raw) ? raw : 30;
+  return Math.max(5, seconds) * 1e3;
+}
+function getAnnounceBossDeath() {
+  const raw = game.settings.get(MODULE_ID, SETTINGS.ANNOUNCE_BOSS_DEATH);
+  return raw !== false;
+}
+function getKillWindowMs() {
+  const raw = game.settings.get(MODULE_ID, SETTINGS.KILL_WINDOW);
+  const seconds = typeof raw === "number" && Number.isFinite(raw) ? raw : DEFAULT_KILL_WINDOW_SECONDS;
+  return Math.max(5, seconds) * 1e3;
+}
 
 // src/logic/boss.ts
 function bossSlotInitiative(slot, rank) {
@@ -156,24 +359,6 @@ var TacticalInitiative = class {
   }
 };
 
-// src/settings.ts
-function registerSettings() {
-  game.settings.register(MODULE_ID, SETTINGS.PLAYER_TIMEOUT, {
-    name: "TACTICAL_INITIATIVE.Settings.PlayerTimeout.Name",
-    hint: "TACTICAL_INITIATIVE.Settings.PlayerTimeout.Hint",
-    scope: "world",
-    config: true,
-    type: Number,
-    default: 30,
-    range: { min: 5, max: 300, step: 5 }
-  });
-}
-function getPlayerTimeoutMs() {
-  const raw = game.settings.get(MODULE_ID, SETTINGS.PLAYER_TIMEOUT);
-  const seconds = typeof raw === "number" && Number.isFinite(raw) ? raw : 30;
-  return Math.max(5, seconds) * 1e3;
-}
-
 // src/logic/tag.ts
 function isTag(value) {
   return typeof value === "string" && TAGS.includes(value);
@@ -184,6 +369,9 @@ function resolveTag(actorType, storedTag) {
 }
 
 // src/adapter/tags.ts
+function isExplicitlyTagged(actor, tag) {
+  return actor.getFlag(MODULE_ID, FLAGS.TAG) === tag;
+}
 function readActorTag(actor) {
   if (!actor) return "mob";
   const stored = actor.getFlag(MODULE_ID, FLAGS.TAG);
@@ -553,6 +741,131 @@ function registerChoosingIndicator() {
   });
 }
 
+// src/adapter/combat-events.ts
+function escapeHtml(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function tokenDoc(uuid) {
+  return fromUuidSync(uuid);
+}
+var FoundryDeathPort = class {
+  now() {
+    return Date.now();
+  }
+  actorHp(actor) {
+    const hp = actor.system?.attributes?.hp?.value;
+    return typeof hp === "number" ? hp : null;
+  }
+  actorUuid(actor) {
+    return actor.uuid;
+  }
+  actorName(actor) {
+    return actor.name;
+  }
+  isExplicitMob(actor) {
+    return isExplicitlyTagged(actor, "mob");
+  }
+  isBoss(actor) {
+    return readActorTag(actor) === "boss";
+  }
+  tokensForActor(actor) {
+    const a = actor;
+    const tokens = a.isToken && a.token ? [a.token] : a.getActiveTokens(false, true);
+    return tokens.map((token) => ({ id: token.id, uuid: token.uuid, name: token.name }));
+  }
+  findCombatantForToken(tokenId) {
+    for (const combat of game.combats?.contents ?? []) {
+      const combatant = combat.combatants.find((entry) => entry.tokenId === tokenId);
+      if (combatant) return { combatId: combat.id, combatantId: combatant.id };
+    }
+    return null;
+  }
+  async hideToken(token) {
+    await tokenDoc(token.uuid)?.update({ hidden: true });
+  }
+  async removeCombatant(location) {
+    const combatant = game.combats?.get(location.combatId)?.combatants.get(location.combatantId);
+    if (combatant) await combatant.delete();
+  }
+  async whisperRestore(token, combatId) {
+    const gmId = game.user?.id;
+    if (!gmId) return;
+    const label = escapeHtml(
+      game.i18n.format("TACTICAL_INITIATIVE.Chat.RestoreMob", { name: token.name })
+    );
+    const content = `<button type="button" data-ti-token="${escapeHtml(token.uuid)}" data-ti-combat="${escapeHtml(combatId)}">${label}</button>`;
+    await ChatMessage.create({ content, whisper: [gmId] });
+  }
+  announceBossDeath() {
+    return getAnnounceBossDeath();
+  }
+  killWindowMs() {
+    return getKillWindowMs();
+  }
+  async postPublic(content) {
+    await ChatMessage.create({ content });
+  }
+  localize(key, data) {
+    return game.i18n.format(key, data);
+  }
+  resolveToken(tokenUuid) {
+    const token = tokenDoc(tokenUuid);
+    return token ? { id: token.id, uuid: token.uuid, name: token.name } : null;
+  }
+  async unhideToken(token) {
+    await tokenDoc(token.uuid)?.update({ hidden: false });
+  }
+  combatExists(combatId) {
+    return game.combats?.get(combatId) != null;
+  }
+  combatHasToken(combatId, token) {
+    const combat = game.combats?.get(combatId);
+    return combat?.combatants.find((entry) => entry.tokenId === token.id) != null;
+  }
+  async addTokenToCombat(combatId, token) {
+    const combat = game.combats?.get(combatId);
+    const doc = tokenDoc(token.uuid);
+    if (!combat || !doc) return;
+    await combat.createEmbeddedDocuments("Combatant", [
+      { tokenId: doc.id, sceneId: doc.parent?.id, actorId: doc.actorId }
+    ]);
+  }
+  warnRestoreNoCombat() {
+    ui.notifications?.warn(game.i18n.localize("TACTICAL_INITIATIVE.Chat.RestoreNoCombat"));
+  }
+};
+function resolveItemName(itemUuid) {
+  return fromUuidSync(itemUuid)?.name ?? null;
+}
+function registerCombatEvents() {
+  const service = new DeathService(new FoundryDeathPort());
+  Hooks.on("createChatMessage", (message) => {
+    if (!isActiveGM()) return;
+    try {
+      service.recordDamage(parseDamageCard(message, Date.now(), resolveItemName));
+    } catch (error) {
+      console.error(`${MODULE_ID} | recordDamage`, error);
+    }
+  });
+  Hooks.on("dnd5e.damageActor", (actor, changes) => {
+    if (!isActiveGM()) return;
+    guard(
+      "damageActor",
+      () => service.handleDamage(actor, changes)
+    );
+  });
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest("[data-ti-token]");
+    const tokenUuid = button?.dataset["tiToken"];
+    const combatId = button?.dataset["tiCombat"];
+    if (!button || !tokenUuid || !combatId) return;
+    button.removeAttribute("data-ti-token");
+    guard("restoreMob", () => service.restoreMob(tokenUuid, combatId));
+  });
+}
+
 // src/adapter/lookup.ts
 function findCombatant(combatantId) {
   for (const combat of game.combats?.contents ?? []) {
@@ -714,6 +1027,7 @@ Hooks.once("init", () => {
   registerSettings();
   registerQueryHandler();
   registerHooks();
+  registerCombatEvents();
   registerTrackerContextMenu();
   registerActorDirectoryContextMenu();
   registerSheetTagControl();
