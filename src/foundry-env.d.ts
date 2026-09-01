@@ -108,6 +108,9 @@ interface FoundryCombatantGroup {
   readonly name: string;
   readonly initiative: number | null;
   getFlag(scope: string, key: string): unknown;
+  update(data: object): Promise<FoundryCombatantGroup>;
+  setFlag(scope: string, key: string, value: unknown): Promise<FoundryCombatantGroup>;
+  delete(): Promise<FoundryCombatantGroup>;
 }
 
 /** A core/dnd5e Combat document (subset). */
@@ -119,6 +122,8 @@ interface FoundryCombat {
   readonly combatants: FoundryCollection<FoundryCombatant>;
   readonly groups: FoundryCollection<FoundryCombatantGroup>;
   createEmbeddedDocuments(type: string, data: object[]): Promise<FoundryCombatant[]>;
+  updateEmbeddedDocuments(type: string, updates: object[]): Promise<unknown[]>;
+  deleteEmbeddedDocuments(type: string, ids: string[]): Promise<unknown[]>;
   update(data: object): Promise<FoundryCombat>;
 }
 

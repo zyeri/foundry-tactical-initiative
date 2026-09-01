@@ -23,7 +23,9 @@ export const FLAGS = {
   /** Combatant flag: `true` while the owning player's choice dialog is open. */
   CHOOSING: "choosing",
   /** ActiveEffect flag: marks an effect this module created (safe to auto-remove). */
-  TEMP_EFFECT: "temp"
+  TEMP_EFFECT: "temp",
+  /** CombatantGroup flag: the tag color (a CSS hex string). */
+  GROUP_COLOR: "color"
 } as const;
 
 /**
