@@ -55,6 +55,10 @@ interface FoundryActor {
   readonly system?: { attributes?: { hp?: { value?: number } } };
   /** Tokens for this actor on the active scene. Pass (false, true) for documents. */
   getActiveTokens(linked?: boolean, document?: boolean): FoundryTokenDocument[];
+  /** dnd5e: apply damage, or healing with a negative multiplier, to this actor. */
+  applyDamage?(amount: number, options?: { multiplier?: number }): Promise<unknown>;
+  /** Toggle a status/condition effect on this actor (core v11+/dnd5e 5.x). */
+  toggleStatusEffect?(statusId: string, options?: { active?: boolean }): Promise<unknown>;
 }
 
 /** A core TokenDocument (subset used by F4). */
@@ -252,6 +256,19 @@ declare const Roll: {
 declare const CONFIG: FoundryConfig;
 declare const ChatMessage: ChatMessageStatic;
 declare const ui: { notifications?: FoundryNotifications };
+
+/** A placed token object on the canvas (subset used by the group control HUD). */
+interface TokenObject {
+  /** Control (select) this token; `releaseOthers` clears the prior selection. */
+  control(options?: { releaseOthers?: boolean }): boolean;
+  /** Set or clear this token as one of the user's targets. */
+  setTarget(targeted: boolean, options?: { releaseOthers?: boolean }): void;
+}
+
+/** The canvas global (subset): the token layer's placeables lookup. */
+declare const canvas: {
+  tokens?: { get(id: string): TokenObject | undefined } | null;
+};
 
 /** Foundry's synchronous UUID resolver (subset: names for items, docs for tokens). */
 declare function fromUuidSync(uuid: string): { name?: string } | null;
