@@ -65,7 +65,8 @@ export class FoundryAdapter implements FoundryPort {
         tag: readCombatantTag(combatant),
         isDefeated: combatant.isDefeated,
         bossSlot: isBossSlot ? slot : null,
-        bossRank: isBossSlot && typeof order === "number" ? order : null
+        bossRank: isBossSlot && typeof order === "number" ? order : null,
+        groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null
       };
     });
   }

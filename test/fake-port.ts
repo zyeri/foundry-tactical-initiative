@@ -132,6 +132,7 @@ export function makeCombatant(
     bossSlot: null,
     bossRank: null,
     rollValue: 10,
+    groupId: null,
     ...over
   };
 }

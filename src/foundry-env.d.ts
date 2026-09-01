@@ -90,6 +90,8 @@ interface FoundryCombatant {
   readonly actor: FoundryActor | null;
   readonly initiative: number | null;
   readonly isDefeated: boolean;
+  /** The native CombatantGroup id, or null/empty when ungrouped. */
+  readonly group?: string | null;
   /** Active users who own the combatant's actor. */
   readonly players: FoundryUser[];
   readonly combat: FoundryCombat | null;

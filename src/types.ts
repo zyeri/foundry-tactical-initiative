@@ -56,6 +56,8 @@ export interface CombatantView {
   bossSlot: BossSlot | null;
   /** For boss combatants: the stable ordering rank; otherwise `null`. */
   bossRank: number | null;
+  /** The native CombatantGroup id this combatant belongs to, or `null`. */
+  groupId: string | null;
 }
 
 /**
