@@ -36,3 +36,17 @@ select.tactical-initiative-tag-select {
 .tactical-initiative-choices li {
   margin: 0.15em 0;
 }
+
+/* Combat tracker: the colored group-membership tag on a grouped row. */
+.tactical-initiative-group-tag {
+  display: inline-block;
+  margin-left: 0.4em;
+  padding: 0 0.4em;
+  border-radius: 0.6em;
+  font-size: var(--font-size-10, 10px);
+  line-height: 1.5;
+  color: #fff;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+  vertical-align: middle;
+  white-space: nowrap;
+}

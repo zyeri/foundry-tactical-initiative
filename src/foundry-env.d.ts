@@ -188,9 +188,27 @@ interface DialogV2WaitConfig {
   modal?: boolean;
 }
 
+/** A DialogV2 prompt button (subset): a submit action with a form-reading callback. */
+interface DialogV2PromptButton {
+  action: string;
+  label?: string;
+  callback?: (event: Event, button: HTMLButtonElement, dialog: unknown) => unknown;
+}
+
+/** DialogV2.prompt configuration (subset): one input read by the ok callback. */
+interface DialogV2PromptConfig {
+  window: { title: string };
+  content: string;
+  ok: DialogV2PromptButton;
+  modal?: boolean;
+  rejectClose?: boolean;
+}
+
 /** The DialogV2 application class (subset). */
 interface DialogV2Static {
   wait(config: DialogV2WaitConfig): Promise<string | null>;
+  /** Resolves to the ok button's callback return value; rejects if dismissed. */
+  prompt(config: DialogV2PromptConfig): Promise<unknown>;
 }
 
 /** ChatMessage document class (subset). */

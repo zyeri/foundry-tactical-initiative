@@ -5,6 +5,7 @@
  */
 
 import { registerCombatEvents } from "./adapter/combat-events";
+import { registerGroupUI } from "./adapter/group-ui";
 import { registerHooks } from "./adapter/hooks";
 import { registerQueryHandler } from "./adapter/player-query";
 import {
@@ -23,5 +24,6 @@ Hooks.once("init", (): void => {
   registerTrackerContextMenu();
   registerActorDirectoryContextMenu();
   registerSheetTagControl();
+  registerGroupUI();
   console.log(`${MODULE_ID} | initialized`);
 });
