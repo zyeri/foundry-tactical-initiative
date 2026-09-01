@@ -59,6 +59,8 @@ interface FoundryActor {
   applyDamage?(amount: number, options?: { multiplier?: number }): Promise<unknown>;
   /** Toggle a status/condition effect on this actor (core v11+/dnd5e 5.x). */
   toggleStatusEffect?(statusId: string, options?: { active?: boolean }): Promise<unknown>;
+  /** Active status/condition ids on this actor (core v11+/dnd5e). */
+  readonly statuses?: ReadonlySet<string>;
 }
 
 /** A core TokenDocument (subset used by F4). */
@@ -96,6 +98,12 @@ interface FoundryCombatant {
   readonly isDefeated: boolean;
   /** The native CombatantGroup id, or null/empty when ungrouped. */
   readonly group?: string | null;
+  /** The token/combatant display name. */
+  readonly name: string;
+  /** The combatant portrait image path. */
+  readonly img?: string | null;
+  /** True when the GM has hidden this combatant from players. */
+  readonly hidden: boolean;
   /** Active users who own the combatant's actor. */
   readonly players: FoundryUser[];
   readonly combat: FoundryCombat | null;
@@ -125,6 +133,14 @@ interface FoundryCombat {
   readonly turns: FoundryCombatant[];
   readonly combatants: FoundryCollection<FoundryCombatant>;
   readonly groups: FoundryCollection<FoundryCombatantGroup>;
+  /** The current round number. */
+  readonly round: number;
+  /** The combatant whose turn it is, or null. */
+  readonly combatant: FoundryCombatant | null;
+  previousTurn(): Promise<unknown>;
+  nextTurn(): Promise<unknown>;
+  nextRound(): Promise<unknown>;
+  endCombat(): Promise<unknown>;
   createEmbeddedDocuments(type: string, data: object[]): Promise<FoundryCombatant[]>;
   updateEmbeddedDocuments(type: string, updates: object[]): Promise<unknown[]>;
   deleteEmbeddedDocuments(type: string, ids: string[]): Promise<unknown[]>;
@@ -263,11 +279,14 @@ interface TokenObject {
   control(options?: { releaseOthers?: boolean }): boolean;
   /** Set or clear this token as one of the user's targets. */
   setTarget(targeted: boolean, options?: { releaseOthers?: boolean }): void;
+  /** The token's canvas center, for panning. */
+  readonly center?: { x: number; y: number };
 }
 
 /** The canvas global (subset): the token layer's placeables lookup. */
 declare const canvas: {
   tokens?: { get(id: string): TokenObject | undefined } | null;
+  pan?(options: { x?: number; y?: number; scale?: number }): void;
 };
 
 /** Foundry's synchronous UUID resolver (subset: names for items, docs for tokens). */

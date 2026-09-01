@@ -122,7 +122,11 @@ export const SETTINGS = {
   /** World setting: whether a boss death posts a public chat callout. */
   ANNOUNCE_BOSS_DEATH: "announceBossDeath",
   /** World setting: seconds a recorded damage source stays valid for kill attribution. */
-  KILL_WINDOW: "killAttributionWindowSeconds"
+  KILL_WINDOW: "killAttributionWindowSeconds",
+  /** World setting: whether the top-bar tracker is shown. */
+  ENABLE_TOP_BAR: "enableTopBar",
+  /** World setting: how non-owned HP is shown to players ("bar" | "none"). */
+  PLAYER_HP_POLICY: "playerHpPolicy"
 } as const;
 
 /** Default staleness window (seconds) for F5 kill attribution. */

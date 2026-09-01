@@ -6,6 +6,7 @@
 
 import { registerCombatEvents } from "./adapter/combat-events";
 import { registerGroupUI } from "./adapter/group-ui";
+import { registerTopBar } from "./adapter/top-bar";
 import { registerHooks } from "./adapter/hooks";
 import { registerQueryHandler } from "./adapter/player-query";
 import {
@@ -25,5 +26,6 @@ Hooks.once("init", (): void => {
   registerActorDirectoryContextMenu();
   registerSheetTagControl();
   registerGroupUI();
+  registerTopBar();
   console.log(`${MODULE_ID} | initialized`);
 });

@@ -34,6 +34,26 @@ export function registerSettings(): void {
     default: DEFAULT_KILL_WINDOW_SECONDS,
     range: { min: 5, max: 300, step: 5 }
   });
+  game.settings.register(MODULE_ID, SETTINGS.ENABLE_TOP_BAR, {
+    name: "TACTICAL_INITIATIVE.Settings.EnableTopBar.Name",
+    hint: "TACTICAL_INITIATIVE.Settings.EnableTopBar.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+  game.settings.register(MODULE_ID, SETTINGS.PLAYER_HP_POLICY, {
+    name: "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.Name",
+    hint: "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      bar: "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.Bar",
+      none: "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.None"
+    },
+    default: "bar"
+  });
 }
 
 /**
