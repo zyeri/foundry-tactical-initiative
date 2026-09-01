@@ -5,6 +5,7 @@
  */
 
 import { FLAGS, MODULE_ID } from "../constants";
+import { tearDownBossSlots } from "./boss-slots";
 
 /** Default color for a new group tag. */
 export const DEFAULT_GROUP_COLOR = "#8888ff";
@@ -38,6 +39,12 @@ export async function addToGroup(
     "Combatant",
     combatantIds.map((id) => ({ _id: id, group: targetId }))
   );
+  // A grouped boss takes one shared-initiative turn, so tear down any existing
+  // start/end double-turn slots (cascade-safe).
+  for (const id of combatantIds) {
+    const combatant = combat.combatants.get(id);
+    if (combatant) await tearDownBossSlots(combatant, combat);
+  }
 }
 
 /**

@@ -264,8 +264,9 @@ Behavior checks:
 6. **Shared initiative.** Start (or reroll) combat. Confirm every member of a group takes the
    same single initiative each round, with no per-tag prompt for grouped players.
 7. **Grouped boss single turn.** Group a Boss with mobs. Confirm the boss takes ONE turn at
-   the group's initiative on the next reroll (an already-slotted boss keeps its start/end
-   entries until then - `addToGroup` does not yet tear existing slots down; known edge).
+   the group's initiative. Grouping an already-slotted boss now tears down its start/end
+   double-turn entries immediately (cascade-safe); its initiative settles to the group's
+   shared value on the next reroll.
 8. **Colored renameable tag.** Confirm each grouped row shows the colored group tag; **rename**
    and **recolor** from the row's context menu update it on the next render.
 9. **Disband restores.** **Disband group** (or remove the last member). Confirm the members

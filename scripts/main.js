@@ -498,6 +498,18 @@ async function cleanupBossPairOnDelete(deleted, combat) {
     if (primary) await primary.delete();
   }
 }
+async function tearDownBossSlots(combatant, combat) {
+  if (slotOf(combatant) !== "start") return;
+  const end = findEndSlot(combat, combatant.id);
+  await combatant.update({
+    [`flags.${MODULE_ID}.-=${FLAGS.BOSS_SLOT}`]: null,
+    [`flags.${MODULE_ID}.-=${FLAGS.BOSS_ORDER}`]: null
+  });
+  if (end) {
+    await end.update({ [`flags.${MODULE_ID}.-=${FLAGS.BOSS_SLOT}`]: null });
+    await end.delete();
+  }
+}
 async function syncBossDefeat(combatant, combat) {
   if (slotOf(combatant) !== "start") return;
   const end = findEndSlot(combat, combatant.id);
@@ -961,6 +973,10 @@ async function addToGroup(combat, combatantIds, groupId) {
     "Combatant",
     combatantIds.map((id) => ({ _id: id, group: targetId }))
   );
+  for (const id of combatantIds) {
+    const combatant = combat.combatants.get(id);
+    if (combatant) await tearDownBossSlots(combatant, combat);
+  }
 }
 async function removeFromGroup(combat, combatantIds) {
   const affected = /* @__PURE__ */ new Set();
