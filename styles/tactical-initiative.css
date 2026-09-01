@@ -50,3 +50,34 @@ select.tactical-initiative-tag-select {
   vertical-align: middle;
   white-space: nowrap;
 }
+
+/* Group control HUD (B1b). */
+.tactical-initiative-group-hud-members {
+  list-style: none;
+  margin: 0 0 0.5em;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.tactical-initiative-group-hud-member {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5em;
+  padding: 0.1em 0.25em;
+}
+
+.tactical-initiative-group-hud-hp {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.tactical-initiative-group-hud-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25em;
+}
+
+.tactical-initiative-group-hud-actions button {
+  width: 100%;
+}

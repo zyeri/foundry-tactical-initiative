@@ -16,6 +16,7 @@ import {
   removeFromGroup,
   renameGroup
 } from "./groups";
+import { openGroupHud } from "./group-hud";
 import { findCombatant } from "./lookup";
 
 /** A combat-tracker context-menu entry (Foundry's `ContextMenuEntry`, subset). */
@@ -101,6 +102,20 @@ function clickedGroupId(target: unknown): string | null {
 /** Whether the right-clicked combatant is in a group (menu-visibility guard). */
 function isGrouped(target?: unknown): boolean {
   return clickedGroupId(target) !== null;
+}
+
+/**
+ * Open the group control HUD for the right-clicked combatant's group.
+ *
+ * @param target - The context-menu callback target.
+ */
+function openHudForClicked(target: unknown): void {
+  const id = combatantIdFromTarget(target);
+  const groupId = clickedGroupId(target);
+  if (!id || !groupId) return;
+  const location = findCombatant(id);
+  if (!location) return;
+  openGroupHud(location.combat, groupId);
 }
 
 /**
@@ -262,6 +277,14 @@ function pushGroupOptions(options: ContextMenuEntry[]): void {
     condition: (): boolean => isGM(),
     callback: (target: unknown): void => {
       void addSelectionToNewGroup(target);
+    }
+  });
+  options.push({
+    name: game.i18n.localize("TACTICAL_INITIATIVE.HUD.Open"),
+    icon: `<i class="fas fa-gauge-high"></i>`,
+    condition: (target?: unknown): boolean => isGM() && isGrouped(target),
+    callback: (target: unknown): void => {
+      openHudForClicked(target);
     }
   });
   options.push({

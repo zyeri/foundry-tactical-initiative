@@ -51,8 +51,8 @@ interface FoundryActor {
   readonly isToken?: boolean;
   /** For a token actor, its TokenDocument; otherwise null. */
   readonly token?: FoundryTokenDocument | null;
-  /** dnd5e system data (subset): current hit points. */
-  readonly system?: { attributes?: { hp?: { value?: number } } };
+  /** dnd5e system data (subset): current and max hit points. */
+  readonly system?: { attributes?: { hp?: { value?: number; max?: number } } };
   /** Tokens for this actor on the active scene. Pass (false, true) for documents. */
   getActiveTokens(linked?: boolean, document?: boolean): FoundryTokenDocument[];
   /** dnd5e: apply damage, or healing with a negative multiplier, to this actor. */
@@ -273,11 +273,27 @@ declare const canvas: {
 /** Foundry's synchronous UUID resolver (subset: names for items, docs for tokens). */
 declare function fromUuidSync(uuid: string): { name?: string } | null;
 
+/**
+ * ApplicationV2 base (subset). This module builds a template-free panel by
+ * overriding `_renderHTML` (build the content element) and `_replaceHTML` (mount
+ * it); the exact v14 render-protocol signatures are a documented assumption
+ * (README - group control HUD).
+ */
+declare class ApplicationV2 {
+  constructor(options?: object);
+  static DEFAULT_OPTIONS: object;
+  render(options?: boolean | { force?: boolean }): Promise<unknown>;
+  close(options?: object): Promise<unknown>;
+  protected _renderHTML(context: unknown, options: unknown): Promise<unknown>;
+  protected _replaceHTML(result: unknown, content: HTMLElement, options: unknown): void;
+}
+
 /** The `foundry` global namespace (only the pieces used here). */
 declare const foundry: {
   applications: {
     api: {
       DialogV2: DialogV2Static;
+      ApplicationV2: typeof ApplicationV2;
     };
   };
 };
