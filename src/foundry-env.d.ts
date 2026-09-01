@@ -61,6 +61,8 @@ interface FoundryActor {
   toggleStatusEffect?(statusId: string, options?: { active?: boolean }): Promise<unknown>;
   /** Active status/condition ids on this actor (core v11+/dnd5e). */
   readonly statuses?: ReadonlySet<string>;
+  /** This actor's sheet application (for opening from the tracker). */
+  readonly sheet?: { render(force: boolean): unknown };
 }
 
 /** A core TokenDocument (subset used by F4). */

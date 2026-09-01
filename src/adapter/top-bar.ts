@@ -13,7 +13,10 @@ import {
   type TrackerRow,
   type Viewer
 } from "../logic/tracker-view";
+import { openGroupHud } from "./group-hud";
 import { groupColor } from "./groups";
+import { isActiveGM } from "./hooks";
+import { findCombatant } from "./lookup";
 import { readCombatantTag } from "./tags";
 
 /** The id of the bar container element. */
@@ -73,6 +76,21 @@ function container(): HTMLElement {
   return element;
 }
 
+/** Pan to and control a combatant's token (GM or owner). */
+function focusToken(combatantId: string): void {
+  const location = findCombatant(combatantId);
+  const tokenId = location?.combatant.tokenId ?? null;
+  if (!tokenId) return;
+  const token = canvas.tokens?.get(tokenId);
+  token?.control({ releaseOthers: true });
+  if (token?.center) canvas.pan?.({ x: token.center.x, y: token.center.y });
+}
+
+/** Open the actor sheet for a combatant. */
+function openSheet(combatantId: string): void {
+  findCombatant(combatantId)?.combatant.actor?.sheet?.render(true);
+}
+
 /** Build one combatant or group row element (interactions added in Task 3). */
 function renderRow(row: TrackerRow): HTMLElement {
   const li = document.createElement("div");
@@ -101,6 +119,12 @@ function renderRow(row: TrackerRow): HTMLElement {
       cond.title = row.conditions.join(", ");
       li.appendChild(cond);
     }
+    li.addEventListener("click", () => {
+      focusToken(row.combatantId);
+    });
+    li.addEventListener("dblclick", () => {
+      openSheet(row.combatantId);
+    });
     li.title = row.name;
   } else {
     li.dataset["groupId"] = row.groupId;
@@ -110,9 +134,42 @@ function renderRow(row: TrackerRow): HTMLElement {
     badge.className = `${MODULE_ID}-tb-count`;
     badge.textContent = `x${row.memberCount}`;
     li.appendChild(badge);
+    li.addEventListener("click", () => {
+      const combat = game.combats?.active ?? null;
+      if (combat) openGroupHud(combat, row.groupId);
+    });
     li.title = row.name;
   }
   return li;
+}
+
+/** Build the GM turn-control cluster (previous/next turn, next round, end, round no.). */
+function renderControls(combat: FoundryCombat): HTMLElement {
+  const bar = document.createElement("div");
+  bar.className = `${MODULE_ID}-tb-controls`;
+  const round = document.createElement("span");
+  round.className = `${MODULE_ID}-tb-round`;
+  round.textContent = game.i18n.format("TACTICAL_INITIATIVE.Tracker.Round", { n: String(combat.round) });
+  bar.appendChild(round);
+  const button = (action: string, icon: string, key: string, run: () => Promise<unknown>): void => {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = `${MODULE_ID}-tb-btn`;
+    el.dataset["tbAction"] = action;
+    const glyph = document.createElement("i");
+    glyph.className = `fas ${icon}`;
+    el.appendChild(glyph);
+    el.title = game.i18n.localize(key);
+    el.addEventListener("click", () => {
+      if (isActiveGM()) void run();
+    });
+    bar.appendChild(el);
+  };
+  button("prev", "fa-backward-step", "TACTICAL_INITIATIVE.Tracker.PrevTurn", () => combat.previousTurn());
+  button("next", "fa-forward-step", "TACTICAL_INITIATIVE.Tracker.NextTurn", () => combat.nextTurn());
+  button("round", "fa-forward", "TACTICAL_INITIATIVE.Tracker.NextRound", () => combat.nextRound());
+  button("end", "fa-flag-checkered", "TACTICAL_INITIATIVE.Tracker.EndCombat", () => combat.endCombat());
+  return bar;
 }
 
 /** Render (or hide) the bar for the active combat. */
@@ -127,6 +184,7 @@ function render(): void {
     }
     const rows = buildTrackerView(toInput(combat), viewer());
     element.replaceChildren(...rows.map(renderRow));
+    if (game.user?.isGM === true) element.appendChild(renderControls(combat));
     element.hidden = false;
   } catch (error) {
     console.error(`${MODULE_ID} | top-bar render`, error);
