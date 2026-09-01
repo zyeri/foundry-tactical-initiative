@@ -102,6 +102,14 @@ interface FoundryCombatant {
   getInitiativeRoll?(formula?: string): FoundryRoll;
 }
 
+/** A native CombatantGroup document (subset). */
+interface FoundryCombatantGroup {
+  readonly id: string;
+  readonly name: string;
+  readonly initiative: number | null;
+  getFlag(scope: string, key: string): unknown;
+}
+
 /** A core/dnd5e Combat document (subset). */
 interface FoundryCombat {
   readonly id: string;
@@ -109,6 +117,7 @@ interface FoundryCombat {
   readonly round: number;
   readonly turns: FoundryCombatant[];
   readonly combatants: FoundryCollection<FoundryCombatant>;
+  readonly groups: FoundryCollection<FoundryCombatantGroup>;
   createEmbeddedDocuments(type: string, data: object[]): Promise<FoundryCombatant[]>;
   update(data: object): Promise<FoundryCombat>;
 }

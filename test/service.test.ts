@@ -135,3 +135,45 @@ describe("TacticalInitiative.rollForCombatant", () => {
     expect(port.firstIndexOf("setInitiative")).toBe(-1);
   });
 });
+
+describe("rollForCombat with groups", () => {
+  it("gives every group member the group's single rolled initiative and skips their tag path", async () => {
+    const port = new FakePort([
+      makeCombatant({ id: "g-boss", tag: "boss", groupId: "grp", bossSlot: "start", bossRank: 0 }),
+      makeCombatant({ id: "g-mob", tag: "mob", groupId: "grp", rollValue: 3 }),
+      makeCombatant({ id: "solo", tag: "mob", rollValue: 7 })
+    ]);
+    port.groupRolls.set("grp", 15);
+
+    await new TacticalInitiative(port).rollForCombat(COMBAT);
+
+    expect(port.initiatives.get("g-boss")).toBe(15);
+    expect(port.initiatives.get("g-mob")).toBe(15);
+    expect(port.initiatives.get("solo")).toBe(7);
+    expect(port.calls.filter((c) => c.method === "rollGroupInitiative")).toHaveLength(1);
+  });
+
+  it("does not prompt a grouped player", async () => {
+    const port = new FakePort([makeCombatant({ id: "p", tag: "player", groupId: "grp" })]);
+    port.groupRolls.set("grp", 12);
+
+    await new TacticalInitiative(port).rollForCombat(COMBAT);
+
+    expect(port.calls.some((c) => c.method === "requestPlayerChoice")).toBe(false);
+    expect(port.initiatives.get("p")).toBe(12);
+  });
+});
+
+describe("rollForCombatant joining a group mid-round", () => {
+  it("takes the group's current shared initiative instead of rolling its tag", async () => {
+    const port = new FakePort([
+      makeCombatant({ id: "late", tag: "mob", groupId: "grp", rollValue: 99 })
+    ]);
+    port.groupCurrent.set("grp", 8);
+
+    await new TacticalInitiative(port).rollForCombatant(COMBAT, "late");
+
+    expect(port.initiatives.get("late")).toBe(8);
+    expect(port.calls.some((c) => c.method === "rollInitiativeValue")).toBe(false);
+  });
+});
