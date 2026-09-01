@@ -24,6 +24,14 @@
   "TACTICAL_INITIATIVE.Menu.TagAs": "Tactical: tag as {tag}",
   "TACTICAL_INITIATIVE.Menu.SheetTitle": "Tactical Initiative tag",
 
+  "TACTICAL_INITIATIVE.Group.AddTo": "Tactical: add to group",
+  "TACTICAL_INITIATIVE.Group.New": "New group",
+  "TACTICAL_INITIATIVE.Group.Remove": "Tactical: remove from group",
+  "TACTICAL_INITIATIVE.Group.Rename": "Tactical: rename group",
+  "TACTICAL_INITIATIVE.Group.Recolor": "Tactical: recolor group",
+  "TACTICAL_INITIATIVE.Group.Disband": "Tactical: disband group",
+  "TACTICAL_INITIATIVE.Group.DefaultName": "Group {n}",
+
   "TACTICAL_INITIATIVE.Settings.AnnounceBossDeath.Name": "Announce boss deaths in chat",
   "TACTICAL_INITIATIVE.Settings.AnnounceBossDeath.Hint": "Post a public chat message when a Boss-tagged creature reaches 0 HP.",
   "TACTICAL_INITIATIVE.Settings.KillAttributionWindow.Name": "Kill attribution window (seconds)",

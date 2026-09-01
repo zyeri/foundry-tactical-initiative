@@ -236,6 +236,41 @@ Run in a live v14 + dnd5e 5.3 world. Probes 1-2 gate the adapter behavior.
 8. **Toggle + dedupe.** `announceBossDeath` off suppresses the message. With two GMs
    connected, a boss death posts exactly once.
 
+## Combatant groups checklist (B1a, v1.3.0)
+
+v14 + dnd5e 5.3 only. **Probes first** (they gate the UI wiring):
+
+1. **Native group rendering.** Does the v14 combat tracker render `CombatantGroup` rows
+   natively? If so, style them; if not, the module's colored tag on each member row
+   (`decorateTrackerGroups` in `src/adapter/group-ui.ts`) is the fallback the checks below
+   assume.
+2. **dnd5e group initiative.** Confirm dnd5e 5.3 `rollInitiative` does not fight the module
+   setting each member's initiative explicitly, and that the native group `initiative`
+   reflects the shared value. If not, read a member's initiative in `groupInitiativeValue`
+   (`src/adapter/foundry-adapter.ts`).
+3. **Ctrl-select signal.** Determine how the tracker exposes a multi-selected set of rows to
+   a context action. `selectedCombatantIds` (`src/adapter/group-ui.ts`) reads a generous set
+   of candidate selectors and falls back to the single right-clicked row; confirm the real
+   selected-row class and narrow it.
+4. **Rename/recolor dialog.** Rename/recolor use `foundry.applications.api.DialogV2.prompt`
+   with an `ok` callback reading `button.form`. Confirm the callback receives the button and
+   its form value in v14; adjust `DialogV2PromptButton` in `src/foundry-env.d.ts` if the
+   signature differs.
+
+Behavior checks:
+
+5. **Ctrl-select -> add to group.** Ctrl-select two or more tracker rows, right-click, pick
+   **Tactical: add to group**. Confirm a new group forms with those members.
+6. **Shared initiative.** Start (or reroll) combat. Confirm every member of a group takes the
+   same single initiative each round, with no per-tag prompt for grouped players.
+7. **Grouped boss single turn.** Group a Boss with mobs. Confirm the boss takes ONE turn at
+   the group's initiative on the next reroll (an already-slotted boss keeps its start/end
+   entries until then - `addToGroup` does not yet tear existing slots down; known edge).
+8. **Colored renameable tag.** Confirm each grouped row shows the colored group tag; **rename**
+   and **recolor** from the row's context menu update it on the next render.
+9. **Disband restores.** **Disband group** (or remove the last member). Confirm the members
+   return to individual tag behavior on the next reroll.
+
 ## Development
 
 - `src/logic/*` - pure, unit-tested functions.

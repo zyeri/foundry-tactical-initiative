@@ -14,7 +14,9 @@ var FLAGS = {
   /** Combatant flag: `true` while the owning player's choice dialog is open. */
   CHOOSING: "choosing",
   /** ActiveEffect flag: marks an effect this module created (safe to auto-remove). */
-  TEMP_EFFECT: "temp"
+  TEMP_EFFECT: "temp",
+  /** CombatantGroup flag: the tag color (a CSS hex string). */
+  GROUP_COLOR: "color"
 };
 var TAGS = ["player", "boss", "mob"];
 var CHOICES = ["rush", "march", "hunker"];
@@ -256,6 +258,27 @@ function bossSlotInitiative(slot, rank) {
   return base - rank;
 }
 
+// src/logic/group.ts
+function partitionByGroup(combatants) {
+  const ungrouped = [];
+  const groups = [];
+  const byId = /* @__PURE__ */ new Map();
+  for (const combatant of combatants) {
+    if (combatant.groupId === null) {
+      ungrouped.push(combatant);
+      continue;
+    }
+    let group = byId.get(combatant.groupId);
+    if (!group) {
+      group = { groupId: combatant.groupId, members: [] };
+      byId.set(combatant.groupId, group);
+      groups.push(group);
+    }
+    group.members.push(combatant);
+  }
+  return { groups, ungrouped };
+}
+
 // src/logic/initiative.ts
 function initiativeAdjustment(choice) {
   return CHOICE_INIT_ADJUST[choice];
@@ -286,9 +309,16 @@ var TacticalInitiative = class {
       await this.port.clearInitiative(combatant.id);
     }
     const active = combatants.filter((c) => !c.isDefeated);
-    const choices = await this.gatherPlayerChoices(active);
-    for (const combatant of active) {
+    const { groups, ungrouped } = partitionByGroup(active);
+    const choices = await this.gatherPlayerChoices(ungrouped);
+    for (const combatant of ungrouped) {
       await this.applyCombatant(combatant, choices.get(combatant.id));
+    }
+    for (const group of groups) {
+      const value = await this.port.rollGroupInitiative(group.groupId);
+      for (const member of group.members) {
+        await this.port.setInitiative(member.id, value);
+      }
     }
   }
   /**
@@ -302,6 +332,11 @@ var TacticalInitiative = class {
     const combatants = await this.port.listCombatants(combatId);
     const combatant = combatants.find((c) => c.id === combatantId);
     if (!combatant || combatant.isDefeated) return;
+    if (combatant.groupId !== null) {
+      const shared = await this.port.groupInitiativeValue(combatant.groupId);
+      if (shared !== null) await this.port.setInitiative(combatant.id, shared);
+      return;
+    }
     const choices = await this.gatherPlayerChoices([combatant]);
     await this.applyCombatant(combatant, choices.get(combatant.id));
   }
@@ -403,6 +438,7 @@ function nextBossRank(combat) {
 async function setupBossCombatant(combatant, combat) {
   if (readCombatantTag(combatant) !== "boss") return;
   if (slotOf(combatant) !== null) return;
+  if (typeof combatant.group === "string" && combatant.group) return;
   const rank = nextBossRank(combat);
   await combatant.update({
     initiative: bossSlotInitiative("start", rank),
@@ -586,7 +622,8 @@ var FoundryAdapter = class {
         tag: readCombatantTag(combatant),
         isDefeated: combatant.isDefeated,
         bossSlot: isBossSlot ? slot : null,
-        bossRank: isBossSlot && typeof order === "number" ? order : null
+        bossRank: isBossSlot && typeof order === "number" ? order : null,
+        groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null
       };
     });
   }
@@ -651,6 +688,19 @@ var FoundryAdapter = class {
     const content = game.i18n.format("TACTICAL_INITIATIVE.Chat.DefaultedToMarch", { name: actorName });
     await ChatMessage.create({ content });
   }
+  async rollGroupInitiative(groupId) {
+    const member = this.combat.combatants.find(
+      (c) => (typeof c.group === "string" ? c.group : null) === groupId
+    );
+    if (!member) return 0;
+    const roll = this.buildInitiativeRoll(member);
+    await roll.evaluate();
+    return roll.total;
+  }
+  async groupInitiativeValue(groupId) {
+    const group = this.combat.groups.get(groupId);
+    return group && typeof group.initiative === "number" ? group.initiative : null;
+  }
 };
 
 // src/adapter/hooks.ts
@@ -698,8 +748,9 @@ function registerHooks() {
     if (!combat) return;
     guard("createCombatant", async () => {
       const tag = readCombatantTag(combatant);
-      if (tag === "boss") await setupBossCombatant(combatant, combat);
-      if (combat.started && tag !== "boss") {
+      const grouped = typeof combatant.group === "string" && combatant.group.length > 0;
+      if (tag === "boss" && !grouped) await setupBossCombatant(combatant, combat);
+      if (combat.started && (grouped || tag !== "boss")) {
         await serviceFor(combat).rollForCombatant(combat.id, combatant.id);
       }
     });
@@ -866,6 +917,66 @@ function registerCombatEvents() {
   });
 }
 
+// src/adapter/groups.ts
+var DEFAULT_GROUP_COLOR = "#8888ff";
+async function addToGroup(combat, combatantIds, groupId) {
+  if (combatantIds.length === 0) return;
+  let targetId = groupId;
+  if (targetId === null) {
+    const name = game.i18n.format("TACTICAL_INITIATIVE.Group.DefaultName", {
+      n: String(combat.groups.size + 1)
+    });
+    const created = await combat.createEmbeddedDocuments("CombatantGroup", [
+      { name, flags: { [MODULE_ID]: { [FLAGS.GROUP_COLOR]: DEFAULT_GROUP_COLOR } } }
+    ]);
+    const group = created[0];
+    if (!group) return;
+    targetId = group.id;
+  }
+  await combat.updateEmbeddedDocuments(
+    "Combatant",
+    combatantIds.map((id) => ({ _id: id, group: targetId }))
+  );
+}
+async function removeFromGroup(combat, combatantIds) {
+  const affected = /* @__PURE__ */ new Set();
+  for (const id of combatantIds) {
+    const combatant = combat.combatants.get(id);
+    const group = combatant && typeof combatant.group === "string" ? combatant.group : null;
+    if (group) affected.add(group);
+  }
+  await combat.updateEmbeddedDocuments(
+    "Combatant",
+    combatantIds.map((id) => ({ _id: id, group: null }))
+  );
+  for (const groupId of affected) {
+    const stillHasMembers = combat.combatants.contents.some(
+      (c) => (typeof c.group === "string" ? c.group : null) === groupId
+    );
+    if (!stillHasMembers) await disbandGroup(combat, groupId);
+  }
+}
+async function renameGroup(combat, groupId, name) {
+  await combat.groups.get(groupId)?.update({ name });
+}
+async function recolorGroup(combat, groupId, color) {
+  await combat.groups.get(groupId)?.setFlag(MODULE_ID, FLAGS.GROUP_COLOR, color);
+}
+async function disbandGroup(combat, groupId) {
+  const memberIds = combat.combatants.contents.filter((c) => (typeof c.group === "string" ? c.group : null) === groupId).map((c) => c.id);
+  if (memberIds.length > 0) {
+    await combat.updateEmbeddedDocuments(
+      "Combatant",
+      memberIds.map((id) => ({ _id: id, group: null }))
+    );
+  }
+  await combat.deleteEmbeddedDocuments("CombatantGroup", [groupId]);
+}
+function groupColor(group) {
+  const color = group.getFlag(MODULE_ID, FLAGS.GROUP_COLOR);
+  return typeof color === "string" ? color : DEFAULT_GROUP_COLOR;
+}
+
 // src/adapter/lookup.ts
 function findCombatant(combatantId) {
   for (const combat of game.combats?.contents ?? []) {
@@ -875,13 +986,244 @@ function findCombatant(combatantId) {
   return null;
 }
 
-// src/adapter/tagging-ui.ts
+// src/adapter/group-ui.ts
+function resolveElement(value) {
+  if (value instanceof HTMLElement) return value;
+  const jqueryLike = value;
+  const first = jqueryLike?.[0];
+  return first instanceof HTMLElement ? first : null;
+}
 function combatantIdFromTarget(target) {
   const element = resolveElement(target);
   const id = element?.dataset["combatantId"];
   return typeof id === "string" ? id : null;
 }
-function resolveElement(value) {
+function selectedCombatantIds(target) {
+  const ids = /* @__PURE__ */ new Set();
+  const clicked = combatantIdFromTarget(target);
+  if (clicked) ids.add(clicked);
+  try {
+    const element = resolveElement(target);
+    const tracker = element?.closest("#combat, .combat-tracker, section.combat, [data-tab='combat']") ?? element?.ownerDocument.body ?? null;
+    const selected = tracker?.querySelectorAll(
+      ".combatant.selected, li.combatant[aria-selected='true'], .combatant.active-selection"
+    );
+    selected?.forEach((row) => {
+      const id = row.dataset["combatantId"];
+      if (typeof id === "string" && id.length > 0) ids.add(id);
+    });
+  } catch {
+  }
+  return [...ids];
+}
+function clickedGroupId(target) {
+  const id = combatantIdFromTarget(target);
+  if (!id) return null;
+  const location = findCombatant(id);
+  const group = location && typeof location.combatant.group === "string" ? location.combatant.group : null;
+  return group && group.length > 0 ? group : null;
+}
+function isGrouped(target) {
+  return clickedGroupId(target) !== null;
+}
+function escapeAttribute(value) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function readDialogValue(button) {
+  const field = button.form?.elements.namedItem("value");
+  return field instanceof HTMLInputElement ? field.value : "";
+}
+async function promptForText(titleKey, current) {
+  try {
+    const result = await foundry.applications.api.DialogV2.prompt({
+      window: { title: game.i18n.localize(titleKey) },
+      modal: true,
+      content: `<input type="text" name="value" value="${escapeAttribute(current)}" style="width:100%" autofocus>`,
+      ok: {
+        action: "ok",
+        callback: (_event, button) => readDialogValue(button).trim()
+      }
+    });
+    return typeof result === "string" ? result : null;
+  } catch {
+    return null;
+  }
+}
+async function promptForColor(current) {
+  try {
+    const result = await foundry.applications.api.DialogV2.prompt({
+      window: { title: game.i18n.localize("TACTICAL_INITIATIVE.Group.Recolor") },
+      modal: true,
+      content: `<input type="color" name="value" value="${escapeAttribute(current)}" autofocus>`,
+      ok: {
+        action: "ok",
+        callback: (_event, button) => readDialogValue(button)
+      }
+    });
+    return typeof result === "string" ? result : null;
+  } catch {
+    return null;
+  }
+}
+async function addSelectionToNewGroup(target) {
+  const id = combatantIdFromTarget(target);
+  if (!id) return;
+  const location = findCombatant(id);
+  if (!location) return;
+  await addToGroup(location.combat, selectedCombatantIds(target), null);
+}
+async function removeClickedFromGroup(target) {
+  const id = combatantIdFromTarget(target);
+  if (!id) return;
+  const location = findCombatant(id);
+  if (!location) return;
+  await removeFromGroup(location.combat, [id]);
+}
+async function renameClickedGroup(target) {
+  const id = combatantIdFromTarget(target);
+  const groupId = clickedGroupId(target);
+  if (!id || !groupId) return;
+  const location = findCombatant(id);
+  if (!location) return;
+  const current = location.combat.groups.get(groupId)?.name ?? "";
+  const name = await promptForText("TACTICAL_INITIATIVE.Group.Rename", current);
+  if (name !== null && name.length > 0) await renameGroup(location.combat, groupId, name);
+}
+async function recolorClickedGroup(target) {
+  const id = combatantIdFromTarget(target);
+  const groupId = clickedGroupId(target);
+  if (!id || !groupId) return;
+  const location = findCombatant(id);
+  if (!location) return;
+  const group = location.combat.groups.get(groupId);
+  const current = group ? groupColor(group) : DEFAULT_GROUP_COLOR;
+  const color = await promptForColor(current);
+  if (color !== null && color.length > 0) await recolorGroup(location.combat, groupId, color);
+}
+async function disbandClickedGroup(target) {
+  const id = combatantIdFromTarget(target);
+  const groupId = clickedGroupId(target);
+  if (!id || !groupId) return;
+  const location = findCombatant(id);
+  if (!location) return;
+  await disbandGroup(location.combat, groupId);
+}
+function pushGroupOptions(options) {
+  const isGM = () => game.user?.isGM === true;
+  options.push({
+    name: game.i18n.localize("TACTICAL_INITIATIVE.Group.AddTo"),
+    icon: `<i class="fas fa-object-group"></i>`,
+    condition: () => isGM(),
+    callback: (target) => {
+      void addSelectionToNewGroup(target);
+    }
+  });
+  options.push({
+    name: game.i18n.localize("TACTICAL_INITIATIVE.Group.Remove"),
+    icon: `<i class="fas fa-object-ungroup"></i>`,
+    condition: (target) => isGM() && isGrouped(target),
+    callback: (target) => {
+      void removeClickedFromGroup(target);
+    }
+  });
+  options.push({
+    name: game.i18n.localize("TACTICAL_INITIATIVE.Group.Rename"),
+    icon: `<i class="fas fa-pen"></i>`,
+    condition: (target) => isGM() && isGrouped(target),
+    callback: (target) => {
+      void renameClickedGroup(target);
+    }
+  });
+  options.push({
+    name: game.i18n.localize("TACTICAL_INITIATIVE.Group.Recolor"),
+    icon: `<i class="fas fa-palette"></i>`,
+    condition: (target) => isGM() && isGrouped(target),
+    callback: (target) => {
+      void recolorClickedGroup(target);
+    }
+  });
+  options.push({
+    name: game.i18n.localize("TACTICAL_INITIATIVE.Group.Disband"),
+    icon: `<i class="fas fa-users-slash"></i>`,
+    condition: (target) => isGM() && isGrouped(target),
+    callback: (target) => {
+      void disbandClickedGroup(target);
+    }
+  });
+}
+var GROUP_CONTEXT_PATCHED = "__tacticalInitiativeGroupContextPatched";
+var ENTRY_CONTEXT_METHOD = "_getEntryContextOptions";
+function trackerPrototype() {
+  const config = CONFIG;
+  const fromClass = config.ui?.combat?.prototype;
+  if (fromClass && typeof fromClass === "object") return fromClass;
+  const directory = game.combats?.directory;
+  return directory ? Object.getPrototypeOf(directory) : null;
+}
+function tryPatchTracker() {
+  try {
+    const proto = trackerPrototype();
+    if (!proto) return false;
+    if (proto[GROUP_CONTEXT_PATCHED] === true) return true;
+    const original = proto[ENTRY_CONTEXT_METHOD];
+    if (typeof original !== "function") return false;
+    const wrapped = original;
+    proto[ENTRY_CONTEXT_METHOD] = function(...args) {
+      const entries = wrapped.apply(this, args) ?? [];
+      pushGroupOptions(entries);
+      return entries;
+    };
+    proto[GROUP_CONTEXT_PATCHED] = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+function decorateTrackerGroups(root) {
+  try {
+    const combat = game.combats?.active ?? null;
+    if (!combat) return;
+    const rows = root.querySelectorAll(".combatant[data-combatant-id]");
+    rows.forEach((row) => {
+      const id = row.dataset["combatantId"];
+      if (typeof id !== "string" || id.length === 0) return;
+      const combatant = combat.combatants.get(id);
+      const groupId = combatant && typeof combatant.group === "string" ? combatant.group : null;
+      if (!groupId || groupId.length === 0) return;
+      const group = combat.groups.get(groupId);
+      if (!group) return;
+      if (row.querySelector(`.${MODULE_ID}-group-tag`)) return;
+      const tag = document.createElement("span");
+      tag.className = `${MODULE_ID}-group-tag`;
+      tag.textContent = group.name;
+      tag.title = group.name;
+      tag.style.backgroundColor = groupColor(group);
+      const anchor = row.querySelector(".token-name, .combatant-name, .name") ?? row;
+      anchor.appendChild(tag);
+    });
+  } catch {
+  }
+}
+function registerGroupUI() {
+  Hooks.once("ready", () => {
+    if (tryPatchTracker()) return;
+    Hooks.on("getCombatantContextOptions", (_appOrHtml, options) => {
+      pushGroupOptions(options);
+    });
+  });
+  Hooks.on("renderCombatTracker", (_app, html) => {
+    const root = resolveElement(html);
+    if (root) decorateTrackerGroups(root);
+  });
+}
+
+// src/adapter/tagging-ui.ts
+function combatantIdFromTarget2(target) {
+  const element = resolveElement2(target);
+  const id = element?.dataset["combatantId"];
+  return typeof id === "string" ? id : null;
+}
+function resolveElement2(value) {
   if (value instanceof HTMLElement) return value;
   const jqueryLike = value;
   const first = jqueryLike?.[0];
@@ -902,14 +1244,14 @@ function pushTagOptions(options) {
       icon: `<i class="fas fa-flag"></i>`,
       condition: () => game.user?.isGM === true,
       callback: (target) => {
-        const id = combatantIdFromTarget(target);
+        const id = combatantIdFromTarget2(target);
         if (id) void retagCombatant(id, tag);
       }
     });
   }
 }
 function actorIdFromTarget(target) {
-  const element = resolveElement(target);
+  const element = resolveElement2(target);
   if (!element) return null;
   const direct = element.dataset["entryId"] ?? element.dataset["documentId"];
   if (typeof direct === "string" && direct.length > 0) return direct;
@@ -949,23 +1291,23 @@ function registerActorDirectoryContextMenu() {
   Hooks.on("getActorDirectoryEntryContext", handler);
 }
 var ENTRY_CONTEXT_PATCHED = "__tacticalInitiativeEntryContextPatched";
-var ENTRY_CONTEXT_METHOD = "_getEntryContextOptions";
-function trackerPrototype() {
+var ENTRY_CONTEXT_METHOD2 = "_getEntryContextOptions";
+function trackerPrototype2() {
   const config = CONFIG;
   const fromClass = config.ui?.combat?.prototype;
   if (fromClass && typeof fromClass === "object") return fromClass;
   const directory = game.combats?.directory;
   return directory ? Object.getPrototypeOf(directory) : null;
 }
-function tryPatchTracker() {
+function tryPatchTracker2() {
   try {
-    const proto = trackerPrototype();
+    const proto = trackerPrototype2();
     if (!proto) return false;
     if (proto[ENTRY_CONTEXT_PATCHED] === true) return true;
-    const original = proto[ENTRY_CONTEXT_METHOD];
+    const original = proto[ENTRY_CONTEXT_METHOD2];
     if (typeof original !== "function") return false;
     const wrapped = original;
-    proto[ENTRY_CONTEXT_METHOD] = function(...args) {
+    proto[ENTRY_CONTEXT_METHOD2] = function(...args) {
       const entries = wrapped.apply(this, args) ?? [];
       pushTagOptions(entries);
       return entries;
@@ -978,7 +1320,7 @@ function tryPatchTracker() {
 }
 function registerTrackerContextMenu() {
   Hooks.once("ready", () => {
-    if (tryPatchTracker()) return;
+    if (tryPatchTracker2()) return;
     Hooks.on("getCombatantContextOptions", (_appOrHtml, options) => {
       pushTagOptions(options);
     });
@@ -998,7 +1340,7 @@ function injectSheetControl(app, html) {
   if (game.user?.isGM !== true) return;
   const actor = app.actor ?? null;
   if (!actor) return;
-  const root = resolveElement(html);
+  const root = resolveElement2(html);
   const header = root?.querySelector(".window-header .window-title") ?? root?.querySelector(".window-header");
   if (!header || header.querySelector(`.${MODULE_ID}-tag-select`)) return;
   const current = readActorTag(actor);
@@ -1031,6 +1373,7 @@ Hooks.once("init", () => {
   registerTrackerContextMenu();
   registerActorDirectoryContextMenu();
   registerSheetTagControl();
+  registerGroupUI();
   console.log(`${MODULE_ID} | initialized`);
 });
 //# sourceMappingURL=main.js.map
