@@ -42,6 +42,10 @@ export class FakePort implements FoundryPort {
   public readonly choosing: Array<{ id: string; choosing: boolean }> = [];
   /** Names announced as defaulting to March. */
   public readonly announced: string[] = [];
+  /** Scripted per-group roll for rollGroupInitiative. */
+  public readonly groupRolls = new Map<string, number>();
+  /** Scripted per-group current value for groupInitiativeValue. */
+  public readonly groupCurrent = new Map<string, number>();
 
   /**
    * @param combatants - The fixtures this fake exposes via {@link listCombatants}.
@@ -114,6 +118,16 @@ export class FakePort implements FoundryPort {
     this.record("announceDefaultMarch", actorName);
     this.announced.push(actorName);
   }
+
+  public async rollGroupInitiative(groupId: string): Promise<number> {
+    this.record("rollGroupInitiative", groupId);
+    return this.groupRolls.get(groupId) ?? 0;
+  }
+
+  public async groupInitiativeValue(groupId: string): Promise<number | null> {
+    this.record("groupInitiativeValue", groupId);
+    return this.groupCurrent.get(groupId) ?? null;
+  }
 }
 
 /**
@@ -132,6 +146,7 @@ export function makeCombatant(
     bossSlot: null,
     bossRank: null,
     rollValue: 10,
+    groupId: null,
     ...over
   };
 }

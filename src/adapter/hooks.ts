@@ -21,7 +21,7 @@ import { readCombatantTag } from "./tags";
  *
  * @returns `true` on exactly one connected GM client.
  */
-function isActiveGM(): boolean {
+export function isActiveGM(): boolean {
   return game.user?.isGM === true && game.users?.activeGM === game.user;
 }
 
@@ -31,7 +31,7 @@ function isActiveGM(): boolean {
  * @param label - A short label for diagnostics.
  * @param body - The async work to run.
  */
-function guard(label: string, body: () => Promise<void>): void {
+export function guard(label: string, body: () => Promise<void>): void {
   body().catch((error: unknown) => {
     console.error(`${MODULE_ID} | ${label}`, error);
   });
@@ -108,9 +108,12 @@ export function registerHooks(): void {
     if (!combat) return;
     guard("createCombatant", async () => {
       const tag = readCombatantTag(combatant);
-      if (tag === "boss") await setupBossCombatant(combatant, combat);
-      // Mid-round join: mobs and players roll immediately; bosses are handled by setup.
-      if (combat.started && tag !== "boss") {
+      const grouped = typeof combatant.group === "string" && combatant.group.length > 0;
+      // A grouped combatant shares its group's initiative and gets no boss slots.
+      if (tag === "boss" && !grouped) await setupBossCombatant(combatant, combat);
+      // Mid-round join: grouped combatants and non-boss tags roll immediately;
+      // an ungrouped boss is handled by its slot setup instead.
+      if (combat.started && (grouped || tag !== "boss")) {
         await serviceFor(combat).rollForCombatant(combat.id, combatant.id);
       }
     });

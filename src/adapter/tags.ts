@@ -7,6 +7,18 @@ import { FLAGS, MODULE_ID, type Tag } from "../constants";
 import { resolveTag } from "../logic/tag";
 
 /**
+ * Whether an actor carries an explicitly-stored tag equal to `tag`, ignoring the
+ * type-based default. Used by F4 so only deliberately-tagged mobs auto-remove.
+ *
+ * @param actor - The actor to inspect.
+ * @param tag - The tag to test for.
+ * @returns `true` only when the stored tag flag equals `tag`.
+ */
+export function isExplicitlyTagged(actor: FoundryActor, tag: Tag): boolean {
+  return actor.getFlag(MODULE_ID, FLAGS.TAG) === tag;
+}
+
+/**
  * Read an actor's effective tactical tag, applying the type-based default when
  * the flag is unset or invalid.
  *

@@ -6,6 +6,7 @@
 
 import type { Choice } from "./constants";
 import { bossSlotInitiative } from "./logic/boss";
+import { partitionByGroup } from "./logic/group";
 import { initiativeAdjustment, normalizeChoice } from "./logic/initiative";
 import type { CombatantView, FoundryPort } from "./types";
 
@@ -35,9 +36,20 @@ export class TacticalInitiative {
     }
 
     const active = combatants.filter((c) => !c.isDefeated);
-    const choices = await this.gatherPlayerChoices(active);
-    for (const combatant of active) {
+    const { groups, ungrouped } = partitionByGroup(active);
+
+    // Ungrouped: normal per-tag behavior.
+    const choices = await this.gatherPlayerChoices(ungrouped);
+    for (const combatant of ungrouped) {
       await this.applyCombatant(combatant, choices.get(combatant.id));
+    }
+
+    // Groups: one roll each; every member takes it (grouping overrides tags).
+    for (const group of groups) {
+      const value = await this.port.rollGroupInitiative(group.groupId);
+      for (const member of group.members) {
+        await this.port.setInitiative(member.id, value);
+      }
     }
   }
 
@@ -52,6 +64,11 @@ export class TacticalInitiative {
     const combatants = await this.port.listCombatants(combatId);
     const combatant = combatants.find((c) => c.id === combatantId);
     if (!combatant || combatant.isDefeated) return;
+    if (combatant.groupId !== null) {
+      const shared = await this.port.groupInitiativeValue(combatant.groupId);
+      if (shared !== null) await this.port.setInitiative(combatant.id, shared);
+      return;
+    }
     const choices = await this.gatherPlayerChoices([combatant]);
     await this.applyCombatant(combatant, choices.get(combatant.id));
   }

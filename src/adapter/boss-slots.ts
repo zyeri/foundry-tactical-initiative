@@ -71,6 +71,8 @@ export async function setupBossCombatant(
 ): Promise<void> {
   if (readCombatantTag(combatant) !== "boss") return;
   if (slotOf(combatant) !== null) return; // already a slot (guards recursion)
+  // Grouped combatants share one initiative and skip the double-turn (B1).
+  if (typeof combatant.group === "string" && combatant.group) return;
 
   const rank = nextBossRank(combat);
   await combatant.update({
@@ -123,6 +125,35 @@ export async function cleanupBossPairOnDelete(
 }
 
 /**
+ * Tear down a boss's double-turn slots so it becomes a single normal entry,
+ * WITHOUT triggering the delete-pair cascade: the slot flags are cleared first
+ * (so {@link cleanupBossPairOnDelete} finds no slot and does not delete the
+ * partner), then the end slot is deleted. Used when a boss with existing slots
+ * is added to a group - grouped combatants take one shared-initiative turn, not
+ * the double-turn. A no-op on a combatant that is not a "start" slot. The
+ * combatant's stale start-slot initiative settles to the group's shared value on
+ * the next reroll.
+ *
+ * @param combatant - The boss's natural entry (its "start" slot), or any combatant.
+ * @param combat - The combat it belongs to.
+ */
+export async function tearDownBossSlots(
+  combatant: FoundryCombatant,
+  combat: FoundryCombat
+): Promise<void> {
+  if (slotOf(combatant) !== "start") return;
+  const end = findEndSlot(combat, combatant.id);
+  await combatant.update({
+    [`flags.${MODULE_ID}.-=${FLAGS.BOSS_SLOT}`]: null,
+    [`flags.${MODULE_ID}.-=${FLAGS.BOSS_ORDER}`]: null
+  });
+  if (end) {
+    await end.update({ [`flags.${MODULE_ID}.-=${FLAGS.BOSS_SLOT}`]: null });
+    await end.delete();
+  }
+}
+
+/**
  * Mirror a start-slot boss's defeated state onto its paired end slot so both
  * entries are skipped together (with the "Skip Defeated" combat setting on).
  *
@@ -160,11 +191,6 @@ export async function reconcileBossOnRetag(
     return;
   }
   if (!isBoss && slot === "start") {
-    const end = findEndSlot(combat, combatant.id);
-    if (end) await end.delete();
-    await combatant.update({
-      [`flags.${MODULE_ID}.-=${FLAGS.BOSS_SLOT}`]: null,
-      [`flags.${MODULE_ID}.-=${FLAGS.BOSS_ORDER}`]: null
-    });
+    await tearDownBossSlots(combatant, combat);
   }
 }

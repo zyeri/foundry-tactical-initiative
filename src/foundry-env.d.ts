@@ -47,6 +47,46 @@ interface FoundryActor {
   getRollData?(): object;
   /** dnd5e Actor5e initiative Roll builder (older/parallel to Combatant5e's). */
   getInitiativeRoll?(formula?: string): FoundryRoll;
+  /** True when this is a synthetic actor backing an unlinked token. */
+  readonly isToken?: boolean;
+  /** For a token actor, its TokenDocument; otherwise null. */
+  readonly token?: FoundryTokenDocument | null;
+  /** dnd5e system data (subset): current and max hit points. */
+  readonly system?: { attributes?: { hp?: { value?: number; max?: number } } };
+  /** Tokens for this actor on the active scene. Pass (false, true) for documents. */
+  getActiveTokens(linked?: boolean, document?: boolean): FoundryTokenDocument[];
+  /** dnd5e: apply damage, or healing with a negative multiplier, to this actor. */
+  applyDamage?(amount: number, options?: { multiplier?: number }): Promise<unknown>;
+  /** Toggle a status/condition effect on this actor (core v11+/dnd5e 5.x). */
+  toggleStatusEffect?(statusId: string, options?: { active?: boolean }): Promise<unknown>;
+  /** Active status/condition ids on this actor (core v11+/dnd5e). */
+  readonly statuses?: ReadonlySet<string>;
+  /** This actor's sheet application (for opening from the tracker). */
+  readonly sheet?: { render(force: boolean): unknown };
+}
+
+/** A core TokenDocument (subset used by F4). */
+interface FoundryTokenDocument {
+  readonly id: string;
+  readonly uuid: string;
+  readonly name: string;
+  readonly actorId: string | null;
+  /** The scene this token belongs to. */
+  readonly parent: { id: string } | null;
+  update(data: object): Promise<FoundryTokenDocument>;
+}
+
+/** A ChatMessage document (subset used to capture dnd5e damage cards). */
+interface FoundryChatMessage {
+  readonly speaker?: { actor?: string; alias?: string };
+  readonly flags?: {
+    dnd5e?: {
+      roll?: { type?: string };
+      item?: { uuid?: string };
+      // `uuid` in dnd5e 5.3; a later dnd5e renames the descriptor field to `actor`.
+      targets?: { uuid?: string; actor?: string }[];
+    };
+  };
 }
 
 /** A core/dnd5e Combatant document (subset). */
@@ -58,6 +98,14 @@ interface FoundryCombatant {
   readonly actor: FoundryActor | null;
   readonly initiative: number | null;
   readonly isDefeated: boolean;
+  /** The native CombatantGroup id, or null/empty when ungrouped. */
+  readonly group?: string | null;
+  /** The token/combatant display name. */
+  readonly name: string;
+  /** The combatant portrait image path. */
+  readonly img?: string | null;
+  /** True when the GM has hidden this combatant from players. */
+  readonly hidden: boolean;
   /** Active users who own the combatant's actor. */
   readonly players: FoundryUser[];
   readonly combat: FoundryCombat | null;
@@ -68,6 +116,17 @@ interface FoundryCombatant {
   getInitiativeRoll?(formula?: string): FoundryRoll;
 }
 
+/** A native CombatantGroup document (subset). */
+interface FoundryCombatantGroup {
+  readonly id: string;
+  readonly name: string;
+  readonly initiative: number | null;
+  getFlag(scope: string, key: string): unknown;
+  update(data: object): Promise<FoundryCombatantGroup>;
+  setFlag(scope: string, key: string, value: unknown): Promise<FoundryCombatantGroup>;
+  delete(): Promise<FoundryCombatantGroup>;
+}
+
 /** A core/dnd5e Combat document (subset). */
 interface FoundryCombat {
   readonly id: string;
@@ -75,7 +134,18 @@ interface FoundryCombat {
   readonly round: number;
   readonly turns: FoundryCombatant[];
   readonly combatants: FoundryCollection<FoundryCombatant>;
+  readonly groups: FoundryCollection<FoundryCombatantGroup>;
+  /** The current round number. */
+  readonly round: number;
+  /** The combatant whose turn it is, or null. */
+  readonly combatant: FoundryCombatant | null;
+  previousTurn(): Promise<unknown>;
+  nextTurn(): Promise<unknown>;
+  nextRound(): Promise<unknown>;
+  endCombat(): Promise<unknown>;
   createEmbeddedDocuments(type: string, data: object[]): Promise<FoundryCombatant[]>;
+  updateEmbeddedDocuments(type: string, updates: object[]): Promise<unknown[]>;
+  deleteEmbeddedDocuments(type: string, ids: string[]): Promise<unknown[]>;
   update(data: object): Promise<FoundryCombat>;
 }
 
@@ -119,7 +189,7 @@ interface FoundryGame {
   readonly user: FoundryUser | null;
   readonly users: FoundryUsers | null;
   readonly actors: FoundryCollection<FoundryActor> | null;
-  readonly combats: FoundryCollection<FoundryCombat> | null;
+  readonly combats: (FoundryCollection<FoundryCombat> & { active: FoundryCombat | null }) | null;
   readonly settings: FoundrySettings;
   readonly i18n: FoundryI18n;
 }
@@ -140,9 +210,27 @@ interface DialogV2WaitConfig {
   modal?: boolean;
 }
 
+/** A DialogV2 prompt button (subset): a submit action with a form-reading callback. */
+interface DialogV2PromptButton {
+  action: string;
+  label?: string;
+  callback?: (event: Event, button: HTMLButtonElement, dialog: unknown) => unknown;
+}
+
+/** DialogV2.prompt configuration (subset): one input read by the ok callback. */
+interface DialogV2PromptConfig {
+  window: { title: string };
+  content: string;
+  ok: DialogV2PromptButton;
+  modal?: boolean;
+  rejectClose?: boolean;
+}
+
 /** The DialogV2 application class (subset). */
 interface DialogV2Static {
   wait(config: DialogV2WaitConfig): Promise<string | null>;
+  /** Resolves to the ok button's callback return value; rejects if dismissed. */
+  prompt(config: DialogV2PromptConfig): Promise<unknown>;
 }
 
 /** ChatMessage document class (subset). */
@@ -187,11 +275,46 @@ declare const CONFIG: FoundryConfig;
 declare const ChatMessage: ChatMessageStatic;
 declare const ui: { notifications?: FoundryNotifications };
 
+/** A placed token object on the canvas (subset used by the group control HUD). */
+interface TokenObject {
+  /** Control (select) this token; `releaseOthers` clears the prior selection. */
+  control(options?: { releaseOthers?: boolean }): boolean;
+  /** Set or clear this token as one of the user's targets. */
+  setTarget(targeted: boolean, options?: { releaseOthers?: boolean }): void;
+  /** The token's canvas center, for panning. */
+  readonly center?: { x: number; y: number };
+}
+
+/** The canvas global (subset): the token layer's placeables lookup. */
+declare const canvas: {
+  tokens?: { get(id: string): TokenObject | undefined } | null;
+  pan?(options: { x?: number; y?: number; scale?: number }): void;
+};
+
+/** Foundry's synchronous UUID resolver (subset: names for items, docs for tokens). */
+declare function fromUuidSync(uuid: string): { name?: string } | null;
+
+/**
+ * ApplicationV2 base (subset). This module builds a template-free panel by
+ * overriding `_renderHTML` (build the content element) and `_replaceHTML` (mount
+ * it); the exact v14 render-protocol signatures are a documented assumption
+ * (README - group control HUD).
+ */
+declare class ApplicationV2 {
+  constructor(options?: object);
+  static DEFAULT_OPTIONS: object;
+  render(options?: boolean | { force?: boolean }): Promise<unknown>;
+  close(options?: object): Promise<unknown>;
+  protected _renderHTML(context: unknown, options: unknown): Promise<unknown>;
+  protected _replaceHTML(result: unknown, content: HTMLElement, options: unknown): void;
+}
+
 /** The `foundry` global namespace (only the pieces used here). */
 declare const foundry: {
   applications: {
     api: {
       DialogV2: DialogV2Static;
+      ApplicationV2: typeof ApplicationV2;
     };
   };
 };

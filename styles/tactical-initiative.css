@@ -36,3 +36,162 @@ select.tactical-initiative-tag-select {
 .tactical-initiative-choices li {
   margin: 0.15em 0;
 }
+
+/* Combat tracker: the colored group-membership tag on a grouped row. */
+.tactical-initiative-group-tag {
+  display: inline-block;
+  margin-left: 0.4em;
+  padding: 0 0.4em;
+  border-radius: 0.6em;
+  font-size: var(--font-size-10, 10px);
+  line-height: 1.5;
+  color: #fff;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Group control HUD (B1b). */
+.tactical-initiative-group-hud-members {
+  list-style: none;
+  margin: 0 0 0.5em;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.tactical-initiative-group-hud-member {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5em;
+  padding: 0.1em 0.25em;
+}
+
+.tactical-initiative-group-hud-hp {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.tactical-initiative-group-hud-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25em;
+}
+
+.tactical-initiative-group-hud-actions button {
+  width: 100%;
+}
+
+/* Top-bar combat tracker (B2). */
+.tactical-initiative-top-bar {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.25em;
+  padding: 0.2em 0.4em;
+  margin: 0 auto;
+  max-width: 90vw;
+  overflow-x: auto;
+  pointer-events: all;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 0 0 0.4em 0.4em;
+}
+
+.tactical-initiative-tb-row {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+}
+
+.tactical-initiative-tb-current {
+  outline: 2px solid var(--color-warning, #d9a520);
+  transform: translateY(-3px) scale(1.08);
+}
+
+.tactical-initiative-tb-defeated {
+  filter: grayscale(1) brightness(0.6);
+}
+
+.tactical-initiative-tb-hp {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  background: #c0392b;
+}
+
+.tactical-initiative-tb-hp-text {
+  position: absolute;
+  bottom: 4px;
+  width: 100%;
+  text-align: center;
+  font-size: 9px;
+  color: #fff;
+  text-shadow: 0 0 2px #000;
+}
+
+.tactical-initiative-tb-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  padding: 0 3px;
+  border-radius: 6px;
+  background: #222;
+  color: #fff;
+  font-size: 9px;
+}
+
+.tactical-initiative-tb-cond {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  padding: 0 3px;
+  border-radius: 6px;
+  background: #6a1b9a;
+  color: #fff;
+  font-size: 9px;
+}
+
+.tactical-initiative-tb-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.2em;
+  margin-left: 0.5em;
+}
+
+.tactical-initiative-tb-round {
+  color: #fff;
+  font-size: 11px;
+  margin-right: 0.3em;
+}
+
+.tactical-initiative-tb-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 160px;
+  padding: 0.2em;
+  background: #1b1b1b;
+  border: 1px solid #666;
+  border-radius: 4px;
+}
+
+.tactical-initiative-tb-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.2em 0.4em;
+  background: transparent;
+  border: none;
+  color: #eee;
+  cursor: pointer;
+}
+
+.tactical-initiative-tb-menu-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

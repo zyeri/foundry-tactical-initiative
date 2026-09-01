@@ -56,6 +56,8 @@ export interface CombatantView {
   bossSlot: BossSlot | null;
   /** For boss combatants: the stable ordering rank; otherwise `null`. */
   bossRank: number | null;
+  /** The native CombatantGroup id this combatant belongs to, or `null`. */
+  groupId: string | null;
 }
 
 /**
@@ -125,4 +127,17 @@ export interface FoundryPort {
    * @param actorName - The player actor's display name.
    */
   announceDefaultMarch(actorName: string): Promise<void>;
+
+  /**
+   * Roll a single shared initiative value for a group (does not persist it).
+   * @param groupId - The CombatantGroup id.
+   */
+  rollGroupInitiative(groupId: string): Promise<number>;
+
+  /**
+   * The group's current shared initiative, or `null` when unset. Used for a
+   * combatant joining a group mid-round.
+   * @param groupId - The CombatantGroup id.
+   */
+  groupInitiativeValue(groupId: string): Promise<number | null>;
 }

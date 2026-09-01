@@ -23,7 +23,9 @@ export const FLAGS = {
   /** Combatant flag: `true` while the owning player's choice dialog is open. */
   CHOOSING: "choosing",
   /** ActiveEffect flag: marks an effect this module created (safe to auto-remove). */
-  TEMP_EFFECT: "temp"
+  TEMP_EFFECT: "temp",
+  /** CombatantGroup flag: the tag color (a CSS hex string). */
+  GROUP_COLOR: "color"
 } as const;
 
 /**
@@ -116,5 +118,16 @@ export const QUERY_CHOOSE = `${MODULE_ID}.chooseInitiative` as const;
 /** Module setting keys. */
 export const SETTINGS = {
   /** World setting: seconds to wait for a player's choice before defaulting to March. */
-  PLAYER_TIMEOUT: "playerTimeoutSeconds"
+  PLAYER_TIMEOUT: "playerTimeoutSeconds",
+  /** World setting: whether a boss death posts a public chat callout. */
+  ANNOUNCE_BOSS_DEATH: "announceBossDeath",
+  /** World setting: seconds a recorded damage source stays valid for kill attribution. */
+  KILL_WINDOW: "killAttributionWindowSeconds",
+  /** World setting: whether the top-bar tracker is shown. */
+  ENABLE_TOP_BAR: "enableTopBar",
+  /** World setting: how non-owned HP is shown to players ("bar" | "none"). */
+  PLAYER_HP_POLICY: "playerHpPolicy"
 } as const;
+
+/** Default staleness window (seconds) for F5 kill attribution. */
+export const DEFAULT_KILL_WINDOW_SECONDS = 45 as const;

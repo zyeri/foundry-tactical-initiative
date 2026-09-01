@@ -210,10 +210,117 @@ console) — both exercise the v14-specific code paths.
 11. **Round-2 turn pointer (SMOKE).** After the round-2 reroll, confirm play resumes on
     the correct combatant (the highlighted current turn is not off by one).
 
+## Automation rules checklist (F4/F5, v1.2.0)
+
+Run in a live v14 + dnd5e 5.3 world. Probes 1-2 gate the adapter behavior.
+
+1. **Probe - damageActor deltas.** Log `changes` and `actor.system.attributes.hp.value`
+   on a normal hit and on an overkill against a 0-HP actor. Confirm `changes.hp` is
+   clamped so a corpse-overkill does not re-fire. If it is unclamped, switch death
+   detection to a `preUpdateActor` last-seen-HP compare.
+2. **Probe - chat-card flags.** Log `message.flags.dnd5e` and `message.speaker` on a
+   player's damage roll. Confirm `roll.type === "damage"`, `item.uuid`,
+   `targets[].uuid`, and `speaker.alias`/`speaker.actor` match `parseDamageCard`.
+3. **Mob remove + hide.** Tag an UNLINKED token `mob`; drop it to 0 in combat. Only that
+   token hides and leaves the tracker; sibling unlinked copies and untagged NPCs are
+   untouched; the whispered "Restore" button re-adds it. A `mob` dropped OUT of combat is
+   left alone. (Known limit: a LINKED mob auto-removes only when the GM views its scene.)
+4. **Non-active combat.** With two combats, kill a tagged `mob` in the non-active one. It
+   is still removed (across-combats lookup).
+5. **Boss attribution.** Tag an UNLINKED token `boss`; a player kills it with a targeted
+   weapon -> public "X has killed BOSS with their WEAPON!".
+6. **No self-credit.** A boss whose own attack was the last damage card is never credited
+   for its own death.
+7. **Plain fallback.** Kill a boss with an untargeted AoE or a manual HP edit -> public
+   "BOSS has fallen!".
+8. **Toggle + dedupe.** `announceBossDeath` off suppresses the message. With two GMs
+   connected, a boss death posts exactly once.
+
+## Combatant groups checklist (B1a, v1.3.0)
+
+v14 + dnd5e 5.3 only. **Probes first** (they gate the UI wiring):
+
+1. **Native group rendering.** Does the v14 combat tracker render `CombatantGroup` rows
+   natively? If so, style them; if not, the module's colored tag on each member row
+   (`decorateTrackerGroups` in `src/adapter/group-ui.ts`) is the fallback the checks below
+   assume.
+2. **dnd5e group initiative.** Confirm dnd5e 5.3 `rollInitiative` does not fight the module
+   setting each member's initiative explicitly, and that the native group `initiative`
+   reflects the shared value. If not, read a member's initiative in `groupInitiativeValue`
+   (`src/adapter/foundry-adapter.ts`).
+3. **Ctrl-select signal.** Determine how the tracker exposes a multi-selected set of rows to
+   a context action. `selectedCombatantIds` (`src/adapter/group-ui.ts`) reads a generous set
+   of candidate selectors and falls back to the single right-clicked row; confirm the real
+   selected-row class and narrow it.
+4. **Rename/recolor dialog.** Rename/recolor use `foundry.applications.api.DialogV2.prompt`
+   with an `ok` callback reading `button.form`. Confirm the callback receives the button and
+   its form value in v14; adjust `DialogV2PromptButton` in `src/foundry-env.d.ts` if the
+   signature differs.
+
+Behavior checks:
+
+5. **Ctrl-select -> add to group.** Ctrl-select two or more tracker rows, right-click, pick
+   **Tactical: add to group**. Confirm a new group forms with those members.
+6. **Shared initiative.** Start (or reroll) combat. Confirm every member of a group takes the
+   same single initiative each round, with no per-tag prompt for grouped players.
+7. **Grouped boss single turn.** Group a Boss with mobs. Confirm the boss takes ONE turn at
+   the group's initiative. Grouping an already-slotted boss now tears down its start/end
+   double-turn entries immediately (cascade-safe); its initiative settles to the group's
+   shared value on the next reroll.
+8. **Colored renameable tag.** Confirm each grouped row shows the colored group tag; **rename**
+   and **recolor** from the row's context menu update it on the next render.
+9. **Disband restores.** **Disband group** (or remove the last member). Confirm the members
+   return to individual tag behavior on the next reroll.
+
+## Group control HUD checklist (B1b, v1.4.0)
+
+v14 + dnd5e 5.3 only. The HUD is the Foundry boundary (untested); its render protocol and
+dnd5e calls are assumptions to confirm in a live world.
+
+1. **Open from a group row.** Right-click a grouped combatant -> **Tactical: open group HUD**.
+   Confirm a movable/resizable pop-out lists the group's members with name + HP.
+2. **Select all.** Every member token is controlled on the canvas (move them together). A
+   member without a scene token is skipped.
+3. **Target all.** Every member token becomes one of your targets (existing targets kept).
+4. **Apply damage / healing.** Enter an amount; confirm each member takes it through dnd5e
+   `applyDamage` (resistances/immunities respected). Tick "heal" -> HP is restored instead. A
+   member without a token still takes damage/healing via its actor.
+5. **Toggle condition.** Enter a status id (e.g. `prone`); confirm it is added to every member;
+   running it again removes it.
+
+If an action does nothing, re-check the assumptions in a v14 / dnd5e 5.3 build: ApplicationV2
+`_renderHTML`/`_replaceHTML` signatures, `DialogV2.prompt` form retrieval,
+`actor.applyDamage(amount, { multiplier })`, `actor.toggleStatusEffect(statusId, { active })`,
+and `canvas.tokens.get(id)` `control`/`setTarget`.
+
+## Top-bar tracker checklist (B2, v1.5.0)
+
+v14 + dnd5e 5.3 only. The bar is the Foundry boundary (untested); its hooks and DOM anchor
+are assumptions to confirm live.
+
+1. **Appears / hides.** Start combat -> a horizontal portrait strip appears at the top; end
+   combat -> it disappears. Toggling the "Show the top-bar tracker" setting hides/shows it.
+2. **Order + current turn.** Portrait order matches the sidebar tracker; the current
+   combatant is enlarged/highlighted and follows next/previous turn.
+3. **Visibility.** As a player, GM-hidden combatants you do not own are absent; the GM sees
+   all. HP shows as a bar (or hidden) for un-owned combatants per the "Player HP display"
+   setting; full numbers for the GM and owners.
+4. **Groups.** A group renders as one cell with its color, `xN` count, and shared initiative;
+   clicking it opens the group HUD.
+5. **Interactions.** Click a portrait pans to and selects its token; double-click opens the
+   sheet.
+6. **GM turn controls.** The controls (previous/next turn, next round, end combat, round
+   number) appear only for the GM and drive the native combat.
+7. **Right-click menu.** Right-click a combatant row -> the same tag/group menu the sidebar
+   shows (tag as..., add to group, rename/recolor/disband, etc.).
+
+If the bar never appears, check the DOM anchor (`#ui-top`) and the hook names in a v14 build.
+
 ## Development
 
 - `src/logic/*` - pure, unit-tested functions.
-- `src/service.ts` - initiative orchestration, tested against an in-memory fake port.
+- `src/service.ts`, `src/death-service.ts` - orchestration, tested against in-memory fake
+  ports (`test/fake-port.ts`, `test/fake-death-port.ts`).
 - `src/adapter/*`, `src/main.ts` - the Foundry glue (manual-checklist coverage).
 - See `docs/superpowers/specs/` and `docs/superpowers/plans/` for the design and plan,
   and `FUTURE_WORK.md` for the planned full mock harness.

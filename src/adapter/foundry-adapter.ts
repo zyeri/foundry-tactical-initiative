@@ -65,7 +65,8 @@ export class FoundryAdapter implements FoundryPort {
         tag: readCombatantTag(combatant),
         isDefeated: combatant.isDefeated,
         bossSlot: isBossSlot ? slot : null,
-        bossRank: isBossSlot && typeof order === "number" ? order : null
+        bossRank: isBossSlot && typeof order === "number" ? order : null,
+        groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null
       };
     });
   }
@@ -145,5 +146,21 @@ export class FoundryAdapter implements FoundryPort {
   public async announceDefaultMarch(actorName: string): Promise<void> {
     const content = game.i18n.format("TACTICAL_INITIATIVE.Chat.DefaultedToMarch", { name: actorName });
     await ChatMessage.create({ content });
+  }
+
+  public async rollGroupInitiative(groupId: string): Promise<number> {
+    // Roll once using a representative member so init bonuses apply, then share it.
+    const member = this.combat.combatants.find(
+      (c) => (typeof c.group === "string" ? c.group : null) === groupId
+    );
+    if (!member) return 0;
+    const roll = this.buildInitiativeRoll(member);
+    await roll.evaluate();
+    return roll.total;
+  }
+
+  public async groupInitiativeValue(groupId: string): Promise<number | null> {
+    const group = this.combat.groups.get(groupId);
+    return group && typeof group.initiative === "number" ? group.initiative : null;
   }
 }
