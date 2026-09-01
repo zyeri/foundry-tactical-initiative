@@ -191,11 +191,6 @@ export async function reconcileBossOnRetag(
     return;
   }
   if (!isBoss && slot === "start") {
-    const end = findEndSlot(combat, combatant.id);
-    if (end) await end.delete();
-    await combatant.update({
-      [`flags.${MODULE_ID}.-=${FLAGS.BOSS_SLOT}`]: null,
-      [`flags.${MODULE_ID}.-=${FLAGS.BOSS_ORDER}`]: null
-    });
+    await tearDownBossSlots(combatant, combat);
   }
 }
