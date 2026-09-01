@@ -50,7 +50,11 @@ var SETTINGS = {
   /** World setting: whether a boss death posts a public chat callout. */
   ANNOUNCE_BOSS_DEATH: "announceBossDeath",
   /** World setting: seconds a recorded damage source stays valid for kill attribution. */
-  KILL_WINDOW: "killAttributionWindowSeconds"
+  KILL_WINDOW: "killAttributionWindowSeconds",
+  /** World setting: whether the top-bar tracker is shown. */
+  ENABLE_TOP_BAR: "enableTopBar",
+  /** World setting: how non-owned HP is shown to players ("bar" | "none"). */
+  PLAYER_HP_POLICY: "playerHpPolicy"
 };
 var DEFAULT_KILL_WINDOW_SECONDS = 45;
 
@@ -235,6 +239,26 @@ function registerSettings() {
     type: Number,
     default: DEFAULT_KILL_WINDOW_SECONDS,
     range: { min: 5, max: 300, step: 5 }
+  });
+  game.settings.register(MODULE_ID, SETTINGS.ENABLE_TOP_BAR, {
+    name: "TACTICAL_INITIATIVE.Settings.EnableTopBar.Name",
+    hint: "TACTICAL_INITIATIVE.Settings.EnableTopBar.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+  game.settings.register(MODULE_ID, SETTINGS.PLAYER_HP_POLICY, {
+    name: "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.Name",
+    hint: "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      bar: "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.Bar",
+      none: "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.None"
+    },
+    default: "bar"
   });
 }
 function getPlayerTimeoutMs() {
@@ -1488,6 +1512,61 @@ function registerGroupUI() {
   });
 }
 
+// src/logic/tracker-view.ts
+var DEFAULT_GROUP_COLOR2 = "#8888ff";
+function isVisible(combatant, viewer2) {
+  return viewer2.isGM || !combatant.hidden || combatant.ownedByViewer;
+}
+function hpFor(combatant, viewer2) {
+  if (viewer2.isGM || combatant.ownedByViewer) {
+    return { value: combatant.hp.value, max: combatant.hp.max, shown: "full" };
+  }
+  if (viewer2.playerHpPolicy === "bar") {
+    return { value: combatant.hp.value, max: combatant.hp.max, shown: "bar" };
+  }
+  return { value: null, max: null, shown: "none" };
+}
+function buildTrackerView(input, viewer2) {
+  const meta = new Map(input.groups.map((group) => [group.id, group]));
+  const rows = [];
+  const seenGroups = /* @__PURE__ */ new Set();
+  for (const combatant of input.combatants) {
+    if (!isVisible(combatant, viewer2)) continue;
+    if (combatant.groupId !== null) {
+      if (seenGroups.has(combatant.groupId)) continue;
+      seenGroups.add(combatant.groupId);
+      const members = input.combatants.filter(
+        (other) => other.groupId === combatant.groupId && isVisible(other, viewer2)
+      );
+      const group = meta.get(combatant.groupId);
+      rows.push({
+        kind: "group",
+        groupId: combatant.groupId,
+        name: group?.name ?? "",
+        color: group?.color ?? DEFAULT_GROUP_COLOR2,
+        memberCount: members.length,
+        initiative: combatant.initiative,
+        img: members[0]?.img ?? null,
+        isCurrent: members.some((member) => member.id === input.currentId)
+      });
+    } else {
+      rows.push({
+        kind: "combatant",
+        combatantId: combatant.id,
+        name: combatant.name,
+        img: combatant.img,
+        initiative: combatant.initiative,
+        tag: combatant.tag,
+        hp: hpFor(combatant, viewer2),
+        conditions: combatant.conditions,
+        isCurrent: combatant.id === input.currentId,
+        isDefeated: combatant.isDefeated
+      });
+    }
+  }
+  return rows;
+}
+
 // src/adapter/tagging-ui.ts
 function combatantIdFromTarget2(target) {
   const element = resolveElement2(target);
@@ -1635,6 +1714,209 @@ function capitalize(tag) {
   return `${tag.charAt(0).toUpperCase()}${tag.slice(1)}`;
 }
 
+// src/adapter/top-bar.ts
+var CONTAINER_ID = `${MODULE_ID}-top-bar`;
+function enabled() {
+  return game.settings.get(MODULE_ID, SETTINGS.ENABLE_TOP_BAR) === true;
+}
+function viewer() {
+  const policy = game.settings.get(MODULE_ID, SETTINGS.PLAYER_HP_POLICY);
+  return {
+    isGM: game.user?.isGM === true,
+    playerHpPolicy: policy === "none" ? "none" : "bar"
+  };
+}
+function toCombatant(combatant) {
+  const actor = combatant.actor;
+  const hp = actor?.system?.attributes?.hp;
+  const owned = actor && game.user ? actor.testUserPermission(game.user, "OWNER") : false;
+  return {
+    id: combatant.id,
+    name: combatant.name,
+    img: combatant.img ?? null,
+    initiative: combatant.initiative,
+    tag: readCombatantTag(combatant),
+    groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null,
+    hidden: combatant.hidden,
+    isDefeated: combatant.isDefeated,
+    ownedByViewer: owned,
+    hp: { value: typeof hp?.value === "number" ? hp.value : null, max: typeof hp?.max === "number" ? hp.max : null },
+    conditions: actor?.statuses ? [...actor.statuses] : []
+  };
+}
+function toInput(combat) {
+  return {
+    combatants: combat.turns.map(toCombatant),
+    groups: combat.groups.contents.map((group) => ({ id: group.id, name: group.name, color: groupColor(group) })),
+    currentId: combat.combatant?.id ?? null
+  };
+}
+function container() {
+  const existing = document.getElementById(CONTAINER_ID);
+  if (existing) return existing;
+  const element = document.createElement("div");
+  element.id = CONTAINER_ID;
+  element.className = `${MODULE_ID}-top-bar`;
+  (document.getElementById("ui-top") ?? document.body).appendChild(element);
+  return element;
+}
+function focusToken(combatantId) {
+  const location = findCombatant(combatantId);
+  const tokenId = location?.combatant.tokenId ?? null;
+  if (!tokenId) return;
+  const token = canvas.tokens?.get(tokenId);
+  token?.control({ releaseOthers: true });
+  if (token?.center) canvas.pan?.({ x: token.center.x, y: token.center.y });
+}
+function openSheet(combatantId) {
+  findCombatant(combatantId)?.combatant.actor?.sheet?.render(true);
+}
+function closeMenu() {
+  document.getElementById(`${MODULE_ID}-tb-menu`)?.remove();
+}
+function openMenu(rowEl, x, y) {
+  closeMenu();
+  const entries = [];
+  pushTagOptions(entries);
+  pushGroupOptions(entries);
+  const visible = entries.filter((entry) => {
+    try {
+      return entry.condition(rowEl);
+    } catch {
+      return false;
+    }
+  });
+  if (visible.length === 0) return;
+  const menu = document.createElement("nav");
+  menu.id = `${MODULE_ID}-tb-menu`;
+  menu.className = `${MODULE_ID}-tb-menu`;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  for (const entry of visible) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `${MODULE_ID}-tb-menu-item`;
+    item.textContent = entry.name;
+    item.addEventListener("click", () => {
+      closeMenu();
+      try {
+        entry.callback(rowEl);
+      } catch (error) {
+        console.error(`${MODULE_ID} | top-bar menu`, error);
+      }
+    });
+    menu.appendChild(item);
+  }
+  document.body.appendChild(menu);
+  window.addEventListener("pointerdown", closeMenu, { once: true });
+}
+function renderRow(row) {
+  const li = document.createElement("div");
+  li.className = `${MODULE_ID}-tb-row ${MODULE_ID}-tb-${row.kind}`;
+  if (row.isCurrent) li.classList.add(`${MODULE_ID}-tb-current`);
+  if (row.kind === "combatant") {
+    li.dataset["combatantId"] = row.combatantId;
+    if (row.isDefeated) li.classList.add(`${MODULE_ID}-tb-defeated`);
+    if (row.img) li.style.backgroundImage = `url("${row.img}")`;
+    if (row.hp.shown !== "none" && row.hp.value !== null && row.hp.max !== null && row.hp.max > 0) {
+      const bar = document.createElement("div");
+      bar.className = `${MODULE_ID}-tb-hp`;
+      bar.style.width = `${Math.max(0, Math.min(100, row.hp.value / row.hp.max * 100))}%`;
+      li.appendChild(bar);
+      if (row.hp.shown === "full") {
+        const text = document.createElement("span");
+        text.className = `${MODULE_ID}-tb-hp-text`;
+        text.textContent = `${row.hp.value}/${row.hp.max}`;
+        li.appendChild(text);
+      }
+    }
+    if (row.conditions.length > 0) {
+      const cond = document.createElement("span");
+      cond.className = `${MODULE_ID}-tb-cond`;
+      cond.textContent = String(row.conditions.length);
+      cond.title = row.conditions.join(", ");
+      li.appendChild(cond);
+    }
+    li.addEventListener("click", () => {
+      focusToken(row.combatantId);
+    });
+    li.addEventListener("dblclick", () => {
+      openSheet(row.combatantId);
+    });
+    li.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      openMenu(li, event.clientX, event.clientY);
+    });
+    li.title = row.name;
+  } else {
+    li.dataset["groupId"] = row.groupId;
+    li.style.borderColor = row.color;
+    if (row.img) li.style.backgroundImage = `url("${row.img}")`;
+    const badge = document.createElement("span");
+    badge.className = `${MODULE_ID}-tb-count`;
+    badge.textContent = `x${row.memberCount}`;
+    li.appendChild(badge);
+    li.addEventListener("click", () => {
+      const combat = game.combats?.active ?? null;
+      if (combat) openGroupHud(combat, row.groupId);
+    });
+    li.title = row.name;
+  }
+  return li;
+}
+function renderControls(combat) {
+  const bar = document.createElement("div");
+  bar.className = `${MODULE_ID}-tb-controls`;
+  const round = document.createElement("span");
+  round.className = `${MODULE_ID}-tb-round`;
+  round.textContent = game.i18n.format("TACTICAL_INITIATIVE.Tracker.Round", { n: String(combat.round) });
+  bar.appendChild(round);
+  const button = (action, icon, key, run) => {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = `${MODULE_ID}-tb-btn`;
+    el.dataset["tbAction"] = action;
+    const glyph = document.createElement("i");
+    glyph.className = `fas ${icon}`;
+    el.appendChild(glyph);
+    el.title = game.i18n.localize(key);
+    el.addEventListener("click", () => {
+      if (isActiveGM()) void run();
+    });
+    bar.appendChild(el);
+  };
+  button("prev", "fa-backward-step", "TACTICAL_INITIATIVE.Tracker.PrevTurn", () => combat.previousTurn());
+  button("next", "fa-forward-step", "TACTICAL_INITIATIVE.Tracker.NextTurn", () => combat.nextTurn());
+  button("round", "fa-forward", "TACTICAL_INITIATIVE.Tracker.NextRound", () => combat.nextRound());
+  button("end", "fa-flag-checkered", "TACTICAL_INITIATIVE.Tracker.EndCombat", () => combat.endCombat());
+  return bar;
+}
+function render() {
+  try {
+    const element = container();
+    const combat = game.combats?.active ?? null;
+    if (!combat || !enabled()) {
+      element.hidden = true;
+      element.replaceChildren();
+      return;
+    }
+    const rows = buildTrackerView(toInput(combat), viewer());
+    element.replaceChildren(...rows.map(renderRow));
+    if (game.user?.isGM === true) element.appendChild(renderControls(combat));
+    element.hidden = false;
+  } catch (error) {
+    console.error(`${MODULE_ID} | top-bar render`, error);
+  }
+}
+function registerTopBar() {
+  Hooks.once("ready", render);
+  for (const hook of ["updateCombat", "updateCombatant", "createCombatant", "deleteCombatant", "deleteCombat"]) {
+    Hooks.on(hook, () => {
+      render();
+    });
+  }
+}
+
 // src/main.ts
 Hooks.once("init", () => {
   registerSettings();
@@ -1645,6 +1927,7 @@ Hooks.once("init", () => {
   registerActorDirectoryContextMenu();
   registerSheetTagControl();
   registerGroupUI();
+  registerTopBar();
   console.log(`${MODULE_ID} | initialized`);
 });
 //# sourceMappingURL=main.js.map

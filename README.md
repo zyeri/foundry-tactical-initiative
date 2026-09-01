@@ -292,6 +292,29 @@ If an action does nothing, re-check the assumptions in a v14 / dnd5e 5.3 build: 
 `actor.applyDamage(amount, { multiplier })`, `actor.toggleStatusEffect(statusId, { active })`,
 and `canvas.tokens.get(id)` `control`/`setTarget`.
 
+## Top-bar tracker checklist (B2, v1.5.0)
+
+v14 + dnd5e 5.3 only. The bar is the Foundry boundary (untested); its hooks and DOM anchor
+are assumptions to confirm live.
+
+1. **Appears / hides.** Start combat -> a horizontal portrait strip appears at the top; end
+   combat -> it disappears. Toggling the "Show the top-bar tracker" setting hides/shows it.
+2. **Order + current turn.** Portrait order matches the sidebar tracker; the current
+   combatant is enlarged/highlighted and follows next/previous turn.
+3. **Visibility.** As a player, GM-hidden combatants you do not own are absent; the GM sees
+   all. HP shows as a bar (or hidden) for un-owned combatants per the "Player HP display"
+   setting; full numbers for the GM and owners.
+4. **Groups.** A group renders as one cell with its color, `xN` count, and shared initiative;
+   clicking it opens the group HUD.
+5. **Interactions.** Click a portrait pans to and selects its token; double-click opens the
+   sheet.
+6. **GM turn controls.** The controls (previous/next turn, next round, end combat, round
+   number) appear only for the GM and drive the native combat.
+7. **Right-click menu.** Right-click a combatant row -> the same tag/group menu the sidebar
+   shows (tag as..., add to group, rename/recolor/disband, etc.).
+
+If the bar never appears, check the DOM anchor (`#ui-top`) and the hook names in a v14 build.
+
 ## Development
 
 - `src/logic/*` - pure, unit-tested functions.

@@ -40,6 +40,18 @@
   "TACTICAL_INITIATIVE.HUD.Condition": "Toggle condition",
   "TACTICAL_INITIATIVE.HUD.Heal": "Heal instead of damage",
 
+  "TACTICAL_INITIATIVE.Tracker.PrevTurn": "Previous turn",
+  "TACTICAL_INITIATIVE.Tracker.NextTurn": "Next turn",
+  "TACTICAL_INITIATIVE.Tracker.NextRound": "Next round",
+  "TACTICAL_INITIATIVE.Tracker.EndCombat": "End combat",
+  "TACTICAL_INITIATIVE.Tracker.Round": "Round {n}",
+  "TACTICAL_INITIATIVE.Settings.EnableTopBar.Name": "Show the top-bar tracker",
+  "TACTICAL_INITIATIVE.Settings.EnableTopBar.Hint": "Render an always-on horizontal combat tracker across the top of the screen.",
+  "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.Name": "Player HP display",
+  "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.Hint": "How much HP players see for combatants they do not own in the top-bar tracker.",
+  "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.Bar": "Ratio bar only",
+  "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.None": "Hidden",
+
   "TACTICAL_INITIATIVE.Settings.AnnounceBossDeath.Name": "Announce boss deaths in chat",
   "TACTICAL_INITIATIVE.Settings.AnnounceBossDeath.Hint": "Post a public chat message when a Boss-tagged creature reaches 0 HP.",
   "TACTICAL_INITIATIVE.Settings.KillAttributionWindow.Name": "Kill attribution window (seconds)",
