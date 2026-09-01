@@ -271,6 +271,27 @@ Behavior checks:
 9. **Disband restores.** **Disband group** (or remove the last member). Confirm the members
    return to individual tag behavior on the next reroll.
 
+## Group control HUD checklist (B1b, v1.4.0)
+
+v14 + dnd5e 5.3 only. The HUD is the Foundry boundary (untested); its render protocol and
+dnd5e calls are assumptions to confirm in a live world.
+
+1. **Open from a group row.** Right-click a grouped combatant -> **Tactical: open group HUD**.
+   Confirm a movable/resizable pop-out lists the group's members with name + HP.
+2. **Select all.** Every member token is controlled on the canvas (move them together). A
+   member without a scene token is skipped.
+3. **Target all.** Every member token becomes one of your targets (existing targets kept).
+4. **Apply damage / healing.** Enter an amount; confirm each member takes it through dnd5e
+   `applyDamage` (resistances/immunities respected). Tick "heal" -> HP is restored instead. A
+   member without a token still takes damage/healing via its actor.
+5. **Toggle condition.** Enter a status id (e.g. `prone`); confirm it is added to every member;
+   running it again removes it.
+
+If an action does nothing, re-check the assumptions in a v14 / dnd5e 5.3 build: ApplicationV2
+`_renderHTML`/`_replaceHTML` signatures, `DialogV2.prompt` form retrieval,
+`actor.applyDamage(amount, { multiplier })`, `actor.toggleStatusEffect(statusId, { active })`,
+and `canvas.tokens.get(id)` `control`/`setTarget`.
+
 ## Development
 
 - `src/logic/*` - pure, unit-tested functions.

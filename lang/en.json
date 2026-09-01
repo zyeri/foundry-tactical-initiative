@@ -32,6 +32,14 @@
   "TACTICAL_INITIATIVE.Group.Disband": "Tactical: disband group",
   "TACTICAL_INITIATIVE.Group.DefaultName": "Group {n}",
 
+  "TACTICAL_INITIATIVE.HUD.Title": "Group control",
+  "TACTICAL_INITIATIVE.HUD.Open": "Tactical: open group HUD",
+  "TACTICAL_INITIATIVE.HUD.SelectAll": "Select all",
+  "TACTICAL_INITIATIVE.HUD.TargetAll": "Target all",
+  "TACTICAL_INITIATIVE.HUD.ApplyDamage": "Apply damage / healing",
+  "TACTICAL_INITIATIVE.HUD.Condition": "Toggle condition",
+  "TACTICAL_INITIATIVE.HUD.Heal": "Heal instead of damage",
+
   "TACTICAL_INITIATIVE.Settings.AnnounceBossDeath.Name": "Announce boss deaths in chat",
   "TACTICAL_INITIATIVE.Settings.AnnounceBossDeath.Hint": "Post a public chat message when a Boss-tagged creature reaches 0 HP.",
   "TACTICAL_INITIATIVE.Settings.KillAttributionWindow.Name": "Kill attribution window (seconds)",

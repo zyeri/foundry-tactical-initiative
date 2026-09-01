@@ -977,6 +977,261 @@ function groupColor(group) {
   return typeof color === "string" ? color : DEFAULT_GROUP_COLOR;
 }
 
+// src/group-control-service.ts
+var GroupControlService = class {
+  /**
+   * @param port - The Foundry seam.
+   */
+  constructor(port) {
+    this.port = port;
+  }
+  /**
+   * Select every member token on the canvas (members without a token are skipped).
+   *
+   * @param groupId - The group id.
+   */
+  async selectAll(groupId) {
+    await this.port.selectTokens(this.tokenIds(groupId));
+  }
+  /**
+   * Target every member token.
+   *
+   * @param groupId - The group id.
+   */
+  async targetAll(groupId) {
+    await this.port.targetTokens(this.tokenIds(groupId));
+  }
+  /**
+   * Apply damage or healing to every member actor.
+   *
+   * @param groupId - The group id.
+   * @param input - The damage/healing to apply.
+   */
+  async applyToAll(groupId, input) {
+    for (const member of this.port.members(groupId)) {
+      await this.port.applyDamage(member.actorId, input);
+    }
+  }
+  /**
+   * Toggle a condition on every member.
+   *
+   * @param groupId - The group id.
+   * @param statusId - The dnd5e status/condition id.
+   * @param active - Whether to add (`true`) or remove (`false`) it.
+   */
+  async setConditionAll(groupId, statusId, active) {
+    for (const member of this.port.members(groupId)) {
+      await this.port.setCondition(member, statusId, active);
+    }
+  }
+  /** Token ids of members that have a token. */
+  tokenIds(groupId) {
+    return this.port.members(groupId).map((member) => member.tokenId).filter((id) => id !== null);
+  }
+};
+
+// src/adapter/group-control.ts
+var FoundryGroupControlPort = class {
+  /**
+   * @param combat - The combat whose groups this port operates on.
+   */
+  constructor(combat) {
+    this.combat = combat;
+  }
+  /**
+   * The current members of a group, as {@link GroupMemberRef}s.
+   *
+   * @param groupId - The group id.
+   * @returns The member refs (empty for an unknown or empty group).
+   */
+  members(groupId) {
+    return this.combat.combatants.contents.filter((combatant) => (typeof combatant.group === "string" ? combatant.group : null) === groupId).map((combatant) => ({
+      combatantId: combatant.id,
+      tokenId: combatant.tokenId,
+      actorId: combatant.actorId ?? "",
+      name: combatant.actor?.name ?? ""
+    }));
+  }
+  /**
+   * Control (select) the given tokens on the canvas, replacing the prior
+   * selection with the first and adding the rest.
+   *
+   * @param tokenIds - The token ids to select.
+   */
+  async selectTokens(tokenIds) {
+    if (!isActiveGM()) return;
+    let releaseOthers = true;
+    for (const id of tokenIds) {
+      canvas.tokens?.get(id)?.control({ releaseOthers });
+      releaseOthers = false;
+    }
+  }
+  /**
+   * Add the given tokens to the user's targets (existing targets are kept).
+   *
+   * @param tokenIds - The token ids to target.
+   */
+  async targetTokens(tokenIds) {
+    if (!isActiveGM()) return;
+    for (const id of tokenIds) {
+      canvas.tokens?.get(id)?.setTarget(true, { releaseOthers: false });
+    }
+  }
+  /**
+   * Apply damage (or healing when `isHealing`) to an actor via dnd5e
+   * `applyDamage`, which respects resistances and immunities.
+   *
+   * @param actorId - The actor id.
+   * @param input - The amount and direction.
+   */
+  async applyDamage(actorId, input) {
+    if (!isActiveGM()) return;
+    const actor = game.actors?.get(actorId);
+    if (!actor?.applyDamage) return;
+    await actor.applyDamage(input.amount, { multiplier: input.isHealing === true ? -1 : 1 });
+  }
+  /**
+   * Toggle a status/condition on a member's actor.
+   *
+   * @param member - The member.
+   * @param statusId - The dnd5e status/condition id.
+   * @param active - Whether to add (`true`) or remove (`false`) it.
+   */
+  async setCondition(member, statusId, active) {
+    if (!isActiveGM()) return;
+    const actor = game.actors?.get(member.actorId);
+    if (!actor?.toggleStatusEffect) return;
+    await actor.toggleStatusEffect(statusId, { active });
+  }
+};
+
+// src/adapter/group-hud.ts
+function openGroupHud(combat, groupId) {
+  void new GroupHud(combat, groupId).render(true);
+}
+var GroupHud = class extends foundry.applications.api.ApplicationV2 {
+  /**
+   * @param combat - The combat that owns the group.
+   * @param groupId - The group id this HUD controls.
+   */
+  constructor(combat, groupId) {
+    super({ id: `${MODULE_ID}-group-hud-${groupId}` });
+    this.groupId = groupId;
+    this.port = new FoundryGroupControlPort(combat);
+    this.service = new GroupControlService(this.port);
+  }
+  service;
+  port;
+  static DEFAULT_OPTIONS = {
+    classes: [`${MODULE_ID}-group-hud`],
+    window: { title: "TACTICAL_INITIATIVE.HUD.Title", resizable: true },
+    position: { width: 320 }
+  };
+  /** Build the panel content: a member list plus the action bar. */
+  async _renderHTML(_context, _options) {
+    const root = document.createElement("div");
+    root.className = `${MODULE_ID}-group-hud-body`;
+    const list = document.createElement("ul");
+    list.className = `${MODULE_ID}-group-hud-members`;
+    for (const member of this.port.members(this.groupId)) {
+      list.appendChild(this.renderMember(member));
+    }
+    root.append(list, this.renderActions());
+    return root;
+  }
+  /** Mount the built content and wire the action buttons. */
+  _replaceHTML(result, content, _options) {
+    if (!(result instanceof HTMLElement)) return;
+    content.replaceChildren(result);
+    this.wireActions(content);
+  }
+  /** One member row: name + HP. */
+  renderMember(member) {
+    const li = document.createElement("li");
+    li.className = `${MODULE_ID}-group-hud-member`;
+    const hp = game.actors?.get(member.actorId)?.system?.attributes?.hp;
+    const value = typeof hp?.value === "number" ? hp.value : null;
+    const max = typeof hp?.max === "number" ? hp.max : null;
+    const name = document.createElement("span");
+    name.className = `${MODULE_ID}-group-hud-name`;
+    name.textContent = member.name;
+    const hpEl = document.createElement("span");
+    hpEl.className = `${MODULE_ID}-group-hud-hp`;
+    hpEl.textContent = value === null ? "" : max === null ? String(value) : `${value} / ${max}`;
+    li.append(name, hpEl);
+    return li;
+  }
+  /** The four action buttons. */
+  renderActions() {
+    const bar = document.createElement("div");
+    bar.className = `${MODULE_ID}-group-hud-actions`;
+    const buttons = [
+      ["select", "TACTICAL_INITIATIVE.HUD.SelectAll"],
+      ["target", "TACTICAL_INITIATIVE.HUD.TargetAll"],
+      ["damage", "TACTICAL_INITIATIVE.HUD.ApplyDamage"],
+      ["condition", "TACTICAL_INITIATIVE.HUD.Condition"]
+    ];
+    for (const [action, key] of buttons) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset["tiAction"] = action;
+      button.textContent = game.i18n.localize(key);
+      bar.appendChild(button);
+    }
+    return bar;
+  }
+  /** Attach click handlers to the action buttons. */
+  wireActions(content) {
+    const bind = (action, handler) => {
+      const button = content.querySelector(`button[data-ti-action='${action}']`);
+      button?.addEventListener("click", () => void handler());
+    };
+    bind("select", () => this.service.selectAll(this.groupId));
+    bind("target", () => this.service.targetAll(this.groupId));
+    bind("damage", () => this.promptDamage());
+    bind("condition", () => this.promptCondition());
+  }
+  /** Prompt for an amount + heal flag, then apply to every member. */
+  async promptDamage() {
+    const raw = await foundry.applications.api.DialogV2.prompt({
+      window: { title: game.i18n.localize("TACTICAL_INITIATIVE.HUD.ApplyDamage") },
+      modal: true,
+      content: `<input type="number" name="value" value="0" min="0" style="width:100%" autofocus><label style="display:block;margin-top:0.3em"><input type="checkbox" name="heal"> ${game.i18n.localize("TACTICAL_INITIATIVE.HUD.Heal")}</label>`,
+      ok: {
+        action: "ok",
+        callback: (_event, button) => {
+          const amount2 = button.form?.elements.namedItem("value");
+          const heal = button.form?.elements.namedItem("heal");
+          const value = amount2 instanceof HTMLInputElement ? amount2.value : "0";
+          const isHeal = heal instanceof HTMLInputElement && heal.checked;
+          return `${isHeal ? "-" : ""}${value}`;
+        }
+      }
+    });
+    if (typeof raw !== "string") return;
+    const amount = Math.abs(Number.parseInt(raw, 10));
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    await this.service.applyToAll(this.groupId, { amount, isHealing: raw.startsWith("-") });
+  }
+  /** Prompt for a status id, then toggle it on every member. */
+  async promptCondition() {
+    const statusId = await foundry.applications.api.DialogV2.prompt({
+      window: { title: game.i18n.localize("TACTICAL_INITIATIVE.HUD.Condition") },
+      modal: true,
+      content: `<input type="text" name="value" placeholder="prone" style="width:100%" autofocus>`,
+      ok: {
+        action: "ok",
+        callback: (_event, button) => {
+          const field = button.form?.elements.namedItem("value");
+          return field instanceof HTMLInputElement ? field.value.trim() : "";
+        }
+      }
+    });
+    if (typeof statusId !== "string" || statusId.length === 0) return;
+    await this.service.setConditionAll(this.groupId, statusId, true);
+  }
+};
+
 // src/adapter/lookup.ts
 function findCombatant(combatantId) {
   for (const combat of game.combats?.contents ?? []) {
@@ -1025,6 +1280,14 @@ function clickedGroupId(target) {
 }
 function isGrouped(target) {
   return clickedGroupId(target) !== null;
+}
+function openHudForClicked(target) {
+  const id = combatantIdFromTarget(target);
+  const groupId = clickedGroupId(target);
+  if (!id || !groupId) return;
+  const location = findCombatant(id);
+  if (!location) return;
+  openGroupHud(location.combat, groupId);
 }
 function escapeAttribute(value) {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -1116,6 +1379,14 @@ function pushGroupOptions(options) {
     condition: () => isGM(),
     callback: (target) => {
       void addSelectionToNewGroup(target);
+    }
+  });
+  options.push({
+    name: game.i18n.localize("TACTICAL_INITIATIVE.HUD.Open"),
+    icon: `<i class="fas fa-gauge-high"></i>`,
+    condition: (target) => isGM() && isGrouped(target),
+    callback: (target) => {
+      openHudForClicked(target);
     }
   });
   options.push({
