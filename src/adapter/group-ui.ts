@@ -269,7 +269,7 @@ async function disbandClickedGroup(target: unknown): Promise<void> {
  *
  * @param options - The context-menu entry array to append to.
  */
-function pushGroupOptions(options: ContextMenuEntry[]): void {
+export function pushGroupOptions(options: ContextMenuEntry[]): void {
   const isGM = (): boolean => game.user?.isGM === true;
   options.push({
     name: game.i18n.localize("TACTICAL_INITIATIVE.Group.AddTo"),

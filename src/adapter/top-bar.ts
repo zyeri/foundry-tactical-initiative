@@ -14,9 +14,11 @@ import {
   type Viewer
 } from "../logic/tracker-view";
 import { openGroupHud } from "./group-hud";
+import { pushGroupOptions } from "./group-ui";
 import { groupColor } from "./groups";
 import { isActiveGM } from "./hooks";
 import { findCombatant } from "./lookup";
+import { pushTagOptions } from "./tagging-ui";
 import { readCombatantTag } from "./tags";
 
 /** The id of the bar container element. */
@@ -91,6 +93,57 @@ function openSheet(combatantId: string): void {
   findCombatant(combatantId)?.combatant.actor?.sheet?.render(true);
 }
 
+/** A context-menu entry shape shared with the tag/group builders. */
+interface MenuEntry {
+  name: string;
+  icon: string;
+  condition: (target?: unknown) => boolean;
+  callback: (target: unknown) => void;
+}
+
+/** Remove any open bar context menu. */
+function closeMenu(): void {
+  document.getElementById(`${MODULE_ID}-tb-menu`)?.remove();
+}
+
+/** Open a context menu at (x, y) for the given row element, reusing the sidebar builders. */
+function openMenu(rowEl: HTMLElement, x: number, y: number): void {
+  closeMenu();
+  const entries: MenuEntry[] = [];
+  pushTagOptions(entries);
+  pushGroupOptions(entries);
+  const visible = entries.filter((entry) => {
+    try {
+      return entry.condition(rowEl);
+    } catch {
+      return false;
+    }
+  });
+  if (visible.length === 0) return;
+  const menu = document.createElement("nav");
+  menu.id = `${MODULE_ID}-tb-menu`;
+  menu.className = `${MODULE_ID}-tb-menu`;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  for (const entry of visible) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `${MODULE_ID}-tb-menu-item`;
+    item.textContent = entry.name;
+    item.addEventListener("click", () => {
+      closeMenu();
+      try {
+        entry.callback(rowEl);
+      } catch (error) {
+        console.error(`${MODULE_ID} | top-bar menu`, error);
+      }
+    });
+    menu.appendChild(item);
+  }
+  document.body.appendChild(menu);
+  window.addEventListener("pointerdown", closeMenu, { once: true });
+}
+
 /** Build one combatant or group row element (interactions added in Task 3). */
 function renderRow(row: TrackerRow): HTMLElement {
   const li = document.createElement("div");
@@ -124,6 +177,10 @@ function renderRow(row: TrackerRow): HTMLElement {
     });
     li.addEventListener("dblclick", () => {
       openSheet(row.combatantId);
+    });
+    li.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      openMenu(li, event.clientX, event.clientY);
     });
     li.title = row.name;
   } else {

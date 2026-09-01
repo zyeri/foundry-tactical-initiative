@@ -66,7 +66,7 @@ async function retagCombatant(combatantId: string, tag: Tag): Promise<void> {
  *
  * @param options - The context-menu entry array to append to.
  */
-function pushTagOptions(options: ContextMenuEntry[]): void {
+export function pushTagOptions(options: ContextMenuEntry[]): void {
   for (const tag of TAGS) {
     options.push({
       name: game.i18n.format("TACTICAL_INITIATIVE.Menu.TagAs", {
