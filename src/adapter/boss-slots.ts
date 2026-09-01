@@ -71,6 +71,8 @@ export async function setupBossCombatant(
 ): Promise<void> {
   if (readCombatantTag(combatant) !== "boss") return;
   if (slotOf(combatant) !== null) return; // already a slot (guards recursion)
+  // Grouped combatants share one initiative and skip the double-turn (B1).
+  if (typeof combatant.group === "string" && combatant.group) return;
 
   const rank = nextBossRank(combat);
   await combatant.update({
