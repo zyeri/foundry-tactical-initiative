@@ -49,5 +49,5 @@ actually populate `initiative`? does dnd5e apply the AE bonus keys?). The harnes
 regression net for the module's own logic, not a substitute for one smoke test in a
 live world per Foundry/dnd5e upgrade.
 
-- Sidebar group decoration was removed in v1.6.0: dnd5e 5.3 renders `CombatantGroup`s (2+
+- Sidebar group decoration was removed in v1.5.0-rc2: dnd5e 5.3 renders `CombatantGroup`s (2+
   members) as collapsible rows itself. Revisit only if a replacement tracker needs it.

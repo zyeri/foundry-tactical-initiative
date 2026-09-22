@@ -20,7 +20,7 @@
 - Branch `feat/map-grouping`, worktree `C:/Users/zyery/projects/tactical-initiative-wt-map-grouping`. Run all commands from that worktree.
 - `npm run check` (typecheck + tests + build) passes at the end of every task; commit the rebuilt `scripts/main.js` with each task.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>` (project-authorized trailer, no emoji). Commits require the user's per-commit approval.
-- No version bump in Plan A (v1.6.0 bump happens at the end of Plan B).
+- No version bump in Plan A (v1.5.0-rc2 bump happens at the end of Plan B).
 
 ## Review Focus
 
@@ -2259,7 +2259,7 @@ function renderPopovers(bar: HTMLElement, rows: readonly TrackerRow[]): void {
 - [ ] **Step 4: CSS.** Append to `styles/tactical-initiative.css`:
 
 ```css
-/* Top-bar group cell: stacked member portraits (map grouping, v1.6.0). */
+/* Top-bar group cell: stacked member portraits (map grouping, v1.5.0-rc2). */
 .tactical-initiative-tb-group {
   background: rgba(0, 0, 0, 0.35);
 }
@@ -2341,12 +2341,12 @@ function renderPopovers(bar: HTMLElement, rows: readonly TrackerRow[]): void {
 ```
 
 - [ ] **Step 5: README.** In `README.md`:
-  1. In "Combatant groups checklist (B1a, v1.3.0)", prefix probe 1, probe 3, and check 5 with `**Superseded in v1.6.0 (map grouping).**` and leave their text.
-  2. In "Top-bar tracker checklist (B2, v1.5.0)", change item 4 to: "**Groups.** Superseded in v1.6.0: see the map grouping checklist." and change item 7's parenthetical to "(tag as..., rename/recolor/disband, etc.)".
+  1. In "Combatant groups checklist (B1a, v1.3.0)", prefix probe 1, probe 3, and check 5 with `**Superseded in v1.5.0-rc2 (map grouping).**` and leave their text.
+  2. In "Top-bar tracker checklist (B2, v1.5.0)", change item 4 to: "**Groups.** Superseded in v1.5.0-rc2: see the map grouping checklist." and change item 7's parenthetical to "(tag as..., rename/recolor/disband, etc.)".
   3. Insert before `## Development`:
 
 ```markdown
-## Map grouping checklist (v1.6.0, Plan A)
+## Map grouping checklist (v1.5.0-rc2, Plan A)
 
 v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
 
@@ -2375,7 +2375,7 @@ v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
 - [ ] **Step 6: FUTURE_WORK.** Append to `FUTURE_WORK.md`:
 
 ```markdown
-- Sidebar group decoration was removed in v1.6.0: dnd5e 5.3 renders `CombatantGroup`s (2+
+- Sidebar group decoration was removed in v1.5.0-rc2: dnd5e 5.3 renders `CombatantGroup`s (2+
   members) as collapsible rows itself. Revisit only if a replacement tracker needs it.
 ```
 

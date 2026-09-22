@@ -8,7 +8,7 @@
   `CombatantGroup`, shared initiative, group-overrides-tags, control HUD) is kept.
 - B2 top-bar spec (2026-09-01) group-cell click: click now expands the member list; the
   control HUD moves to the group cell's right-click menu.
-**Release:** v1.6.0, all three parts together (DM decision). Implementation is split
+**Release:** v1.5.0-rc2, all three parts together (DM decision). Implementation is split
 into two plans (see Plan split).
 
 Target: Foundry **v14** + **dnd5e 5.3+** only.
@@ -272,7 +272,7 @@ Core deletes combatants of a deleted token; the module only catches what core mi
 - `src/main.ts` `init`: keybinding registration; `renderTokenHUD`, `preUpdateCombat`,
   `deleteToken`, `deleteCombatant` (empty-group sweep) registrations via named
   `register*` functions like the existing ones.
-- `module.json`: version 1.6.0.
+- `module.json`: release tagged `v1.5.0-rc2`, version field per the rc1 convention.
 - `lang/en.json` new keys: HUD button title; keybinding name and hint;
   NothingSelected warning; group dialog title, name label, New group, Remove from
   group; leftover dialog title, body, Remove, Keep; missing-token marker; grip title;
@@ -334,7 +334,7 @@ restores boss; emptied group deleted.
   and dialog; turn skip; top-bar group cell; removals.
 - **Plan B - Parts 2 and 3:** grip + CSS scaling + setting; leftover sweep + marker;
   restoreMob warning.
-- Both land on `feat/map-grouping`; one v1.6.0 release after both.
+- Both land on `feat/map-grouping`; one v1.5.0-rc2 release after both.
 
 ## Out of scope
 

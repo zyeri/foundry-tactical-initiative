@@ -240,17 +240,17 @@ Run in a live v14 + dnd5e 5.3 world. Probes 1-2 gate the adapter behavior.
 
 v14 + dnd5e 5.3 only. **Probes first** (they gate the UI wiring):
 
-1. **Superseded in v1.6.0 (map grouping).** **Native group rendering.** Does the v14 combat
+1. **Superseded in v1.5.0-rc2 (map grouping).** **Native group rendering.** Does the v14 combat
    tracker render `CombatantGroup` rows natively? If so, style them; if not, the module's
-   colored tag on each member row (`decorateTrackerGroups`, removed in v1.6.0 from
+   colored tag on each member row (`decorateTrackerGroups`, removed in v1.5.0-rc2 from
    `src/adapter/group-ui.ts`) is the fallback the checks below assume.
 2. **dnd5e group initiative.** Confirm dnd5e 5.3 `rollInitiative` does not fight the module
    setting each member's initiative explicitly, and that the native group `initiative`
    reflects the shared value. If not, read a member's initiative in `groupInitiativeValue`
    (`src/adapter/foundry-adapter.ts`).
-3. **Superseded in v1.6.0 (map grouping).** **Ctrl-select signal.** Determine how the tracker
+3. **Superseded in v1.5.0-rc2 (map grouping).** **Ctrl-select signal.** Determine how the tracker
    exposes a multi-selected set of rows to a context action. `selectedCombatantIds` (removed
-   in v1.6.0 from `src/adapter/group-ui.ts`) read a generous set of candidate selectors and
+   in v1.5.0-rc2 from `src/adapter/group-ui.ts`) read a generous set of candidate selectors and
    fell back to the single right-clicked row; confirm the real selected-row class and narrow
    it.
 4. **Rename/recolor dialog.** Rename/recolor use `foundry.applications.api.DialogV2.prompt`
@@ -260,7 +260,7 @@ v14 + dnd5e 5.3 only. **Probes first** (they gate the UI wiring):
 
 Behavior checks:
 
-5. **Superseded in v1.6.0 (map grouping).** **Ctrl-select -> add to group.** Ctrl-select two
+5. **Superseded in v1.5.0-rc2 (map grouping).** **Ctrl-select -> add to group.** Ctrl-select two
    or more tracker rows, right-click, pick **Tactical: add to group**. Confirm a new group
    forms with those members.
 6. **Shared initiative.** Start (or reroll) combat. Confirm every member of a group takes the
@@ -269,7 +269,7 @@ Behavior checks:
    the group's initiative. Grouping an already-slotted boss now tears down its start/end
    double-turn entries immediately (cascade-safe); its initiative settles to the group's
    shared value on the next reroll.
-8. **Superseded in v1.6.0 (sidebar group rows are rendered by dnd5e).** **Colored renameable
+8. **Superseded in v1.5.0-rc2 (sidebar group rows are rendered by dnd5e).** **Colored renameable
    tag.** Confirm each grouped row shows the colored group tag; **rename** and **recolor**
    from the row's context menu update it on the next render.
 9. **Disband restores.** **Disband group** (or remove the last member). Confirm the members
@@ -308,7 +308,7 @@ are assumptions to confirm live.
 3. **Visibility.** As a player, GM-hidden combatants you do not own are absent; the GM sees
    all. HP shows as a bar (or hidden) for un-owned combatants per the "Player HP display"
    setting; full numbers for the GM and owners.
-4. **Groups.** Superseded in v1.6.0: see the map grouping checklist.
+4. **Groups.** Superseded in v1.5.0-rc2: see the map grouping checklist.
 5. **Interactions.** Click a portrait pans to and selects its token; double-click opens the
    sheet.
 6. **GM turn controls.** The controls (previous/next turn, next round, end combat, round
@@ -318,7 +318,7 @@ are assumptions to confirm live.
 
 If the bar never appears, check the DOM anchor (`#ui-top`) and the hook names in a v14 build.
 
-## Map grouping checklist (v1.6.0, Plan A)
+## Map grouping checklist (v1.5.0-rc2, Plan A)
 
 v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
 

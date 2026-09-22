@@ -182,7 +182,7 @@ select.tactical-initiative-tag-select {
   background: rgba(255, 255, 255, 0.12);
 }
 
-/* Top-bar group cell: stacked member portraits (map grouping, v1.6.0). */
+/* Top-bar group cell: stacked member portraits (map grouping, v1.5.0-rc2). */
 .tactical-initiative-tb-group {
   background: rgba(0, 0, 0, 0.35);
 }
