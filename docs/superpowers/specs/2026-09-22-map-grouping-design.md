@@ -272,7 +272,7 @@ Core deletes combatants of a deleted token; the module only catches what core mi
 - `src/main.ts` `init`: keybinding registration; `renderTokenHUD`, `preUpdateCombat`,
   `deleteToken`, `deleteCombatant` (empty-group sweep) registrations via named
   `register*` functions like the existing ones.
-- `module.json`: release tagged `v1.5.0-rc2`, version field per the rc1 convention.
+- `module.json` and `package.json`: version `1.5.0-rc2` (newer than rc1's `1.5.0` for Foundry update detection); tag `v1.5.0-rc2`.
 - `lang/en.json` new keys: HUD button title; keybinding name and hint;
   NothingSelected warning; group dialog title, name label, New group, Remove from
   group; leftover dialog title, body, Remove, Keep; missing-token marker; grip title;
