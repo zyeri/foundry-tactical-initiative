@@ -56,6 +56,14 @@ export interface Viewer {
   playerHpPolicy: "bar" | "none";
 }
 
+/** A group member as listed in the top bar's expand popover. */
+export interface TrackerMember {
+  id: string;
+  name: string;
+  img: string | null;
+  defeated: boolean;
+}
+
 /** One rendered row: a single combatant, or a collapsed group. */
 export type TrackerRow =
   | {
@@ -75,9 +83,17 @@ export type TrackerRow =
       groupId: string;
       name: string;
       color: string;
+      /** Visible members, living or not. */
       memberCount: number;
+      /** Visible members not defeated. */
+      living: number;
       initiative: number | null;
+      /** First stacked portrait (kept for existing callers). */
       img: string | null;
+      /** Up to three portraits of living members (all members if none alive). */
+      portraits: string[];
+      /** Visible members in turn order. */
+      members: TrackerMember[];
       isCurrent: boolean;
     };
 
@@ -122,14 +138,27 @@ export function buildTrackerView(input: TrackerInput, viewer: Viewer): TrackerRo
         (other) => other.groupId === combatant.groupId && isVisible(other, viewer)
       );
       const group = meta.get(combatant.groupId);
+      const alive = members.filter((member) => !member.isDefeated);
+      const portraits = (alive.length > 0 ? alive : members)
+        .map((member) => member.img)
+        .filter((img): img is string => img !== null)
+        .slice(0, 3);
       rows.push({
         kind: "group",
         groupId: combatant.groupId,
         name: group?.name ?? "",
         color: group?.color ?? DEFAULT_GROUP_COLOR,
         memberCount: members.length,
+        living: alive.length,
         initiative: combatant.initiative,
-        img: members[0]?.img ?? null,
+        img: portraits[0] ?? null,
+        portraits,
+        members: members.map((member) => ({
+          id: member.id,
+          name: member.name,
+          img: member.img,
+          defeated: member.isDefeated
+        })),
         isCurrent: members.some((member) => member.id === input.currentId)
       });
     } else {

@@ -1557,14 +1557,24 @@ function buildTrackerView(input, viewer2) {
         (other) => other.groupId === combatant.groupId && isVisible(other, viewer2)
       );
       const group = meta.get(combatant.groupId);
+      const alive = members.filter((member) => !member.isDefeated);
+      const portraits = (alive.length > 0 ? alive : members).map((member) => member.img).filter((img) => img !== null).slice(0, 3);
       rows.push({
         kind: "group",
         groupId: combatant.groupId,
         name: group?.name ?? "",
         color: group?.color ?? DEFAULT_GROUP_COLOR2,
         memberCount: members.length,
+        living: alive.length,
         initiative: combatant.initiative,
-        img: members[0]?.img ?? null,
+        img: portraits[0] ?? null,
+        portraits,
+        members: members.map((member) => ({
+          id: member.id,
+          name: member.name,
+          img: member.img,
+          defeated: member.isDefeated
+        })),
         isCurrent: members.some((member) => member.id === input.currentId)
       });
     } else {
