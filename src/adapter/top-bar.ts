@@ -324,12 +324,48 @@ function render(): void {
 }
 
 /**
+ * Close every open group popover and re-render, if any were open. Shared by the
+ * outside-click and Escape listeners.
+ */
+function closeAllPopovers(): void {
+  if (expandedGroups.size === 0) return;
+  expandedGroups.clear();
+  render();
+}
+
+/**
+ * Register the document-level listeners that close an open group popover on an
+ * outside click or Escape. Registered once from {@link registerTopBar}, not per
+ * render, so repeated redraws don't pile up duplicate listeners. A capture-phase
+ * `pointerdown` outside every `.tactical-initiative-tb-members` popover element
+ * and outside any group cell (`[data-group-id]`) closes the popover; clicking a
+ * member inside a popover, or the group cell that opened it, is left alone so
+ * the existing toggle/pan behavior keeps working.
+ */
+function registerPopoverDismissal(): void {
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (expandedGroups.size === 0) return;
+      const target = event.target instanceof Node ? event.target : null;
+      if (target && (target as Element).closest?.(`.${POPOVER_CLASS}, [data-group-id]`)) return;
+      closeAllPopovers();
+    },
+    true
+  );
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeAllPopovers();
+  });
+}
+
+/**
  * Register the top-bar tracker: create the container and re-render it on every
  * combat change. Interactions and turn controls are added by the same module in
  * Task 3.
  */
 export function registerTopBar(): void {
   Hooks.once("ready", render);
+  registerPopoverDismissal();
   const redrawOn = [
     "createCombat",
     "updateCombat",
