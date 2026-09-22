@@ -37,20 +37,6 @@ select.tactical-initiative-tag-select {
   margin: 0.15em 0;
 }
 
-/* Combat tracker: the colored group-membership tag on a grouped row. */
-.tactical-initiative-group-tag {
-  display: inline-block;
-  margin-left: 0.4em;
-  padding: 0 0.4em;
-  border-radius: 0.6em;
-  font-size: var(--font-size-10, 10px);
-  line-height: 1.5;
-  color: #fff;
-  text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
-  vertical-align: middle;
-  white-space: nowrap;
-}
-
 /* Group control HUD (B1b). */
 .tactical-initiative-group-hud-members {
   list-style: none;
@@ -193,5 +179,85 @@ select.tactical-initiative-tag-select {
 }
 
 .tactical-initiative-tb-menu-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Top-bar group cell: stacked member portraits (map grouping, v1.6.0). */
+.tactical-initiative-tb-group {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.tactical-initiative-tb-stack {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 2px;
+}
+
+.tactical-initiative-tb-stack-img {
+  position: absolute;
+  width: 70%;
+  height: 70%;
+  left: calc(var(--ti-stack-i, 0) * 15%);
+  top: calc(var(--ti-stack-i, 0) * 15%);
+  background-size: cover;
+  background-position: center;
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  border-radius: 3px;
+}
+
+.tactical-initiative-tb-group-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
+  font-size: 9px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.tactical-initiative-tb-expanded {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+
+.tactical-initiative-tb-members {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 0.2em;
+  background: #1b1b1b;
+  border: 2px solid #666;
+  border-radius: 4px;
+  pointer-events: all;
+}
+
+.tactical-initiative-tb-members-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.1em 0.4em;
+  background: transparent;
+  border: none;
+  color: #eee;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tactical-initiative-tb-members-item img {
+  width: 24px;
+  height: 24px;
+  border: none;
+  object-fit: cover;
+}
+
+.tactical-initiative-tb-members-item:hover {
   background: rgba(255, 255, 255, 0.12);
 }

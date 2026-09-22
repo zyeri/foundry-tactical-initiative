@@ -2220,6 +2220,53 @@ function openCombatantMenu(rowEl, x, y) {
   }).map((entry) => ({ label: entry.name, run: () => entry.callback(rowEl) }));
   openMenu(document, MENU_ID, MENU_CLASS, items, x, y);
 }
+var expandedGroups = /* @__PURE__ */ new Set();
+var POPOVER_CLASS = `${MODULE_ID}-tb-members`;
+function openGroupMenu(groupId, x, y) {
+  const combat = game.combats?.active ?? null;
+  if (!combat || game.user?.isGM !== true) return;
+  const items = [
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.Group.Rename"), run: () => renameGroupInteractive(combat, groupId) },
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.Group.Recolor"), run: () => recolorGroupInteractive(combat, groupId) },
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.HUD.Open"), run: () => openGroupHud(combat, groupId) },
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.Group.Disband"), run: () => disbandGroup(combat, groupId) }
+  ];
+  openMenu(document, MENU_ID, MENU_CLASS, items, x, y);
+}
+function renderPopovers(bar, rows) {
+  document.querySelectorAll(`.${POPOVER_CLASS}`).forEach((el) => el.remove());
+  const present = new Set(rows.flatMap((row) => row.kind === "group" ? [row.groupId] : []));
+  for (const id of [...expandedGroups]) if (!present.has(id)) expandedGroups.delete(id);
+  for (const row of rows) {
+    if (row.kind !== "group" || !expandedGroups.has(row.groupId)) continue;
+    const cell = bar.querySelector(`[data-group-id="${row.groupId}"]`);
+    if (!cell) continue;
+    const rect = cell.getBoundingClientRect();
+    const pop = document.createElement("div");
+    pop.className = POPOVER_CLASS;
+    pop.style.left = `${rect.left}px`;
+    pop.style.top = `${rect.bottom + 4}px`;
+    pop.style.borderColor = row.color;
+    for (const member of row.members) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `${POPOVER_CLASS}-item`;
+      if (member.defeated) button.classList.add(`${MODULE_ID}-tb-defeated`);
+      if (member.img) {
+        const img = document.createElement("img");
+        img.src = member.img;
+        img.alt = "";
+        button.appendChild(img);
+      }
+      button.appendChild(document.createTextNode(member.name));
+      button.addEventListener("click", () => {
+        focusToken(member.id);
+      });
+      pop.appendChild(button);
+    }
+    document.body.appendChild(pop);
+  }
+}
 function renderRow(row) {
   const li = document.createElement("div");
   li.className = `${MODULE_ID}-tb-row ${MODULE_ID}-tb-${row.kind}`;
@@ -2261,14 +2308,33 @@ function renderRow(row) {
   } else {
     li.dataset["groupId"] = row.groupId;
     li.style.borderColor = row.color;
-    if (row.img) li.style.backgroundImage = `url("${row.img}")`;
+    const stack = document.createElement("div");
+    stack.className = `${MODULE_ID}-tb-stack`;
+    row.portraits.forEach((src, index) => {
+      const face = document.createElement("div");
+      face.className = `${MODULE_ID}-tb-stack-img`;
+      face.style.backgroundImage = `url("${src}")`;
+      face.style.setProperty("--ti-stack-i", String(index));
+      stack.appendChild(face);
+    });
+    li.appendChild(stack);
     const badge = document.createElement("span");
     badge.className = `${MODULE_ID}-tb-count`;
-    badge.textContent = `x${row.memberCount}`;
+    badge.textContent = row.living < row.memberCount ? `x${row.living}/${row.memberCount}` : `x${row.memberCount}`;
     li.appendChild(badge);
+    const label = document.createElement("span");
+    label.className = `${MODULE_ID}-tb-group-name`;
+    label.textContent = row.name;
+    li.appendChild(label);
+    if (expandedGroups.has(row.groupId)) li.classList.add(`${MODULE_ID}-tb-expanded`);
     li.addEventListener("click", () => {
-      const combat = game.combats?.active ?? null;
-      if (combat) openGroupHud(combat, row.groupId);
+      if (expandedGroups.has(row.groupId)) expandedGroups.delete(row.groupId);
+      else expandedGroups.add(row.groupId);
+      render();
+    });
+    li.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      openGroupMenu(row.groupId, event.clientX, event.clientY);
     });
     li.title = row.name;
   }
@@ -2308,12 +2374,14 @@ function render() {
     if (!combat || !enabled()) {
       element.hidden = true;
       element.replaceChildren();
+      document.querySelectorAll(`.${MODULE_ID}-tb-members`).forEach((el) => el.remove());
       return;
     }
     const rows = buildTrackerView(toInput(combat), viewer());
     element.replaceChildren(...rows.map(renderRow));
     if (game.user?.isGM === true) element.appendChild(renderControls(combat));
     element.hidden = false;
+    renderPopovers(element, rows);
   } catch (error) {
     console.error(`${MODULE_ID} | top-bar render`, error);
   }

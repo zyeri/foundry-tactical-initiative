@@ -15,8 +15,8 @@ import {
   type Viewer
 } from "../logic/tracker-view";
 import { openGroupHud } from "./group-hud";
-import { pushGroupOptions } from "./group-ui";
-import { groupColor } from "./groups";
+import { pushGroupOptions, recolorGroupInteractive, renameGroupInteractive } from "./group-ui";
+import { disbandGroup, groupColor } from "./groups";
 import { isActiveGM } from "./hooks";
 import { findCombatant } from "./lookup";
 import { pushTagOptions } from "./tagging-ui";
@@ -131,6 +131,73 @@ function openCombatantMenu(rowEl: HTMLElement, x: number, y: number): void {
   openUiMenu(document, MENU_ID, MENU_CLASS, items, x, y);
 }
 
+/** Group ids whose member popover is open; survives redraws. */
+const expandedGroups = new Set<string>();
+
+/** Popover element class. */
+const POPOVER_CLASS = `${MODULE_ID}-tb-members`;
+
+/**
+ * Open the group-cell context menu (GM only): rename, recolor, HUD, disband.
+ *
+ * @param groupId - The group id.
+ * @param x - Viewport x.
+ * @param y - Viewport y.
+ */
+function openGroupMenu(groupId: string, x: number, y: number): void {
+  const combat = game.combats?.active ?? null;
+  if (!combat || game.user?.isGM !== true) return;
+  const items: MenuItem[] = [
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.Group.Rename"), run: () => renameGroupInteractive(combat, groupId) },
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.Group.Recolor"), run: () => recolorGroupInteractive(combat, groupId) },
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.HUD.Open"), run: () => openGroupHud(combat, groupId) },
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.Group.Disband"), run: () => disbandGroup(combat, groupId) }
+  ];
+  openUiMenu(document, MENU_ID, MENU_CLASS, items, x, y);
+}
+
+/**
+ * Redraw member popovers for expanded groups, anchored under their cells.
+ * Popovers live on document.body so the bar's scroll box cannot clip them.
+ *
+ * @param bar - The bar container.
+ * @param rows - The rows just rendered.
+ */
+function renderPopovers(bar: HTMLElement, rows: readonly TrackerRow[]): void {
+  document.querySelectorAll(`.${POPOVER_CLASS}`).forEach((el) => el.remove());
+  const present = new Set(rows.flatMap((row) => (row.kind === "group" ? [row.groupId] : [])));
+  for (const id of [...expandedGroups]) if (!present.has(id)) expandedGroups.delete(id);
+  for (const row of rows) {
+    if (row.kind !== "group" || !expandedGroups.has(row.groupId)) continue;
+    const cell = bar.querySelector<HTMLElement>(`[data-group-id="${row.groupId}"]`);
+    if (!cell) continue;
+    const rect = cell.getBoundingClientRect();
+    const pop = document.createElement("div");
+    pop.className = POPOVER_CLASS;
+    pop.style.left = `${rect.left}px`;
+    pop.style.top = `${rect.bottom + 4}px`;
+    pop.style.borderColor = row.color;
+    for (const member of row.members) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `${POPOVER_CLASS}-item`;
+      if (member.defeated) button.classList.add(`${MODULE_ID}-tb-defeated`);
+      if (member.img) {
+        const img = document.createElement("img");
+        img.src = member.img;
+        img.alt = "";
+        button.appendChild(img);
+      }
+      button.appendChild(document.createTextNode(member.name));
+      button.addEventListener("click", () => {
+        focusToken(member.id);
+      });
+      pop.appendChild(button);
+    }
+    document.body.appendChild(pop);
+  }
+}
+
 /** Build one combatant or group row element (interactions added in Task 3). */
 function renderRow(row: TrackerRow): HTMLElement {
   const li = document.createElement("div");
@@ -173,14 +240,33 @@ function renderRow(row: TrackerRow): HTMLElement {
   } else {
     li.dataset["groupId"] = row.groupId;
     li.style.borderColor = row.color;
-    if (row.img) li.style.backgroundImage = `url("${row.img}")`;
+    const stack = document.createElement("div");
+    stack.className = `${MODULE_ID}-tb-stack`;
+    row.portraits.forEach((src, index) => {
+      const face = document.createElement("div");
+      face.className = `${MODULE_ID}-tb-stack-img`;
+      face.style.backgroundImage = `url("${src}")`;
+      face.style.setProperty("--ti-stack-i", String(index));
+      stack.appendChild(face);
+    });
+    li.appendChild(stack);
     const badge = document.createElement("span");
     badge.className = `${MODULE_ID}-tb-count`;
-    badge.textContent = `x${row.memberCount}`;
+    badge.textContent = row.living < row.memberCount ? `x${row.living}/${row.memberCount}` : `x${row.memberCount}`;
     li.appendChild(badge);
+    const label = document.createElement("span");
+    label.className = `${MODULE_ID}-tb-group-name`;
+    label.textContent = row.name;
+    li.appendChild(label);
+    if (expandedGroups.has(row.groupId)) li.classList.add(`${MODULE_ID}-tb-expanded`);
     li.addEventListener("click", () => {
-      const combat = game.combats?.active ?? null;
-      if (combat) openGroupHud(combat, row.groupId);
+      if (expandedGroups.has(row.groupId)) expandedGroups.delete(row.groupId);
+      else expandedGroups.add(row.groupId);
+      render();
+    });
+    li.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      openGroupMenu(row.groupId, event.clientX, event.clientY);
     });
     li.title = row.name;
   }
@@ -224,12 +310,14 @@ function render(): void {
     if (!combat || !enabled()) {
       element.hidden = true;
       element.replaceChildren();
+      document.querySelectorAll(`.${MODULE_ID}-tb-members`).forEach((el) => el.remove());
       return;
     }
     const rows = buildTrackerView(toInput(combat), viewer());
     element.replaceChildren(...rows.map(renderRow));
     if (game.user?.isGM === true) element.appendChild(renderControls(combat));
     element.hidden = false;
+    renderPopovers(element, rows);
   } catch (error) {
     console.error(`${MODULE_ID} | top-bar render`, error);
   }

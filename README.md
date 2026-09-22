@@ -240,18 +240,19 @@ Run in a live v14 + dnd5e 5.3 world. Probes 1-2 gate the adapter behavior.
 
 v14 + dnd5e 5.3 only. **Probes first** (they gate the UI wiring):
 
-1. **Native group rendering.** Does the v14 combat tracker render `CombatantGroup` rows
-   natively? If so, style them; if not, the module's colored tag on each member row
-   (`decorateTrackerGroups` in `src/adapter/group-ui.ts`) is the fallback the checks below
-   assume.
+1. **Superseded in v1.6.0 (map grouping).** **Native group rendering.** Does the v14 combat
+   tracker render `CombatantGroup` rows natively? If so, style them; if not, the module's
+   colored tag on each member row (`decorateTrackerGroups`, removed in v1.6.0 from
+   `src/adapter/group-ui.ts`) is the fallback the checks below assume.
 2. **dnd5e group initiative.** Confirm dnd5e 5.3 `rollInitiative` does not fight the module
    setting each member's initiative explicitly, and that the native group `initiative`
    reflects the shared value. If not, read a member's initiative in `groupInitiativeValue`
    (`src/adapter/foundry-adapter.ts`).
-3. **Ctrl-select signal.** Determine how the tracker exposes a multi-selected set of rows to
-   a context action. `selectedCombatantIds` (`src/adapter/group-ui.ts`) reads a generous set
-   of candidate selectors and falls back to the single right-clicked row; confirm the real
-   selected-row class and narrow it.
+3. **Superseded in v1.6.0 (map grouping).** **Ctrl-select signal.** Determine how the tracker
+   exposes a multi-selected set of rows to a context action. `selectedCombatantIds` (removed
+   in v1.6.0 from `src/adapter/group-ui.ts`) read a generous set of candidate selectors and
+   fell back to the single right-clicked row; confirm the real selected-row class and narrow
+   it.
 4. **Rename/recolor dialog.** Rename/recolor use `foundry.applications.api.DialogV2.prompt`
    with an `ok` callback reading `button.form`. Confirm the callback receives the button and
    its form value in v14; adjust `DialogV2PromptButton` in `src/foundry-env.d.ts` if the
@@ -259,8 +260,9 @@ v14 + dnd5e 5.3 only. **Probes first** (they gate the UI wiring):
 
 Behavior checks:
 
-5. **Ctrl-select -> add to group.** Ctrl-select two or more tracker rows, right-click, pick
-   **Tactical: add to group**. Confirm a new group forms with those members.
+5. **Superseded in v1.6.0 (map grouping).** **Ctrl-select -> add to group.** Ctrl-select two
+   or more tracker rows, right-click, pick **Tactical: add to group**. Confirm a new group
+   forms with those members.
 6. **Shared initiative.** Start (or reroll) combat. Confirm every member of a group takes the
    same single initiative each round, with no per-tag prompt for grouped players.
 7. **Grouped boss single turn.** Group a Boss with mobs. Confirm the boss takes ONE turn at
@@ -305,16 +307,40 @@ are assumptions to confirm live.
 3. **Visibility.** As a player, GM-hidden combatants you do not own are absent; the GM sees
    all. HP shows as a bar (or hidden) for un-owned combatants per the "Player HP display"
    setting; full numbers for the GM and owners.
-4. **Groups.** A group renders as one cell with its color, `xN` count, and shared initiative;
-   clicking it opens the group HUD.
+4. **Groups.** Superseded in v1.6.0: see the map grouping checklist.
 5. **Interactions.** Click a portrait pans to and selects its token; double-click opens the
    sheet.
 6. **GM turn controls.** The controls (previous/next turn, next round, end combat, round
    number) appear only for the GM and drive the native combat.
 7. **Right-click menu.** Right-click a combatant row -> the same tag/group menu the sidebar
-   shows (tag as..., add to group, rename/recolor/disband, etc.).
+   shows (tag as..., rename/recolor/disband, etc.).
 
 If the bar never appears, check the DOM anchor (`#ui-top`) and the hook names in a v14 build.
+
+## Map grouping checklist (v1.6.0, Plan A)
+
+v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
+
+1. **G with no combat.** On a scene with no combat, select 3 goblin tokens, press G. A
+   combat is created and activated; one group "Goblin" holds all three; the top bar shows
+   one stacked cell `x3`.
+2. **HUD button.** Right-click a wolf token, click the group icon in the HUD's left column.
+   A dialog offers a name (default "Wolf"), New group, and Join Goblin.
+3. **Join mid-fight.** Start combat, then G a new goblin token and choose Join Goblin. It
+   enters the combat with the group's initiative; no tag prompt; no extra turn.
+4. **Boss in a selection.** Group a Boss-tagged token: no stray end slot appears. Remove it
+   (HUD button -> Remove from group): its start/end double turn returns.
+5. **Spot removal empties a group.** Remove the last member of a group: the group
+   disappears from the top bar and the dnd5e sidebar.
+6. **Dismiss.** Press G with groups present, close the dialog: nothing changes.
+7. **Non-active GM.** With two GMs connected, the non-active GM presses G: grouping works.
+8. **One turn per group.** Next Turn from a group moves past all its members; Previous Turn
+   onto a group lands on its first member; Next Turn from the last group starts the next
+   round. The dnd5e sidebar shows the group as one collapsible row.
+9. **Group cell.** Click a group cell: a member list opens under it and stays open through
+   an HP change; clicking a member pans to it. Right-click: Rename, Recolor, Open HUD,
+   Disband all work. A defeated member dims in the list and the badge reads `x2/3`.
+10. **Menus fire.** Right-click a combatant cell -> Tactical: tag as Boss applies the tag.
 
 ## Development
 
