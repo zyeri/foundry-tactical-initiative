@@ -200,7 +200,7 @@ export class FoundryGroupingPort implements GroupingPort {
       ...request.options.map(
         (g): DialogV2Button => ({
           action: `join-${g.id}`,
-          label: game.i18n.format("TACTICAL_INITIATIVE.Grouping.Join", { name: g.name }),
+          label: game.i18n.format("TACTICAL_INITIATIVE.Grouping.Join", { name: escapeHtml(g.name) }),
           callback: () => ({ action: "join", groupId: g.id })
         })
       )
