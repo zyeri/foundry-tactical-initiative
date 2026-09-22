@@ -34,6 +34,15 @@ describe("adjustTurn", () => {
     expect(adjustTurn(turns, 1, 9, 1, false)).toEqual({ kind: "keep" });
     expect(adjustTurn(turns, null, 0, 1, false)).toEqual({ kind: "keep" });
   });
+  it("keeps when to === from on a grouped combatant (no-op reset update)", () => {
+    expect(adjustTurn(turns, 1, 1, 1, false)).toEqual({ kind: "keep" });
+    expect(adjustTurn(turns, 1, 1, -1, false)).toEqual({ kind: "keep" });
+  });
+  it("a combat that is a single group: forward off it asks for next round, but a reset to the same index is kept", () => {
+    const soloGroup = [t("m1", "g"), t("m2", "g")];
+    expect(adjustTurn(soloGroup, 0, 1, 1, false)).toEqual({ kind: "nextRound" });
+    expect(adjustTurn(soloGroup, 0, 0, 1, false)).toEqual({ kind: "keep" });
+  });
 });
 
 describe("groupTieBreak", () => {

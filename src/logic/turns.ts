@@ -15,10 +15,13 @@ export interface TurnRef {
 export type TurnAdjust = { kind: "keep" } | { kind: "set"; turn: number } | { kind: "nextRound" };
 
 /**
- * Adjust a pending turn change so a group takes one turn. Forward from a grouped
- * combatant skips its remaining members (and defeated combatants when
- * `skipDefeated`); running off the end asks for the next round. Backward onto a
- * grouped combatant lands on that group's first member.
+ * Adjust a pending turn change so a group takes one turn. `to === from` (a
+ * same-index reset update, e.g. a mid-combat reroll or a "Roll All" that keeps
+ * the current combatant) is always kept untouched, before any group logic runs.
+ * Otherwise, forward from a grouped combatant skips its remaining members (and
+ * defeated combatants when `skipDefeated`); running off the end asks for the
+ * next round. Backward onto a grouped combatant lands on that group's first
+ * member.
  *
  * @param turns - `combat.turns` in order.
  * @param from - The current turn index, or `null` before the first turn.
@@ -35,6 +38,7 @@ export function adjustTurn(
   skipDefeated: boolean
 ): TurnAdjust {
   if (from === null || to < 0 || to >= turns.length) return { kind: "keep" };
+  if (to === from) return { kind: "keep" };
   if (direction === 1) {
     const groupId = turns[from]?.groupId ?? null;
     if (groupId === null) return { kind: "keep" };

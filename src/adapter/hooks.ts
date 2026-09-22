@@ -15,7 +15,7 @@ import {
   syncBossDefeat
 } from "./boss-slots";
 import { FoundryAdapter } from "./foundry-adapter";
-import { sweepEmptyGroups } from "./groups";
+import { sweepEmptyGroup } from "./groups";
 import { readCombatantTag } from "./tags";
 
 /**
@@ -69,7 +69,11 @@ async function rollRoundOnce(combat: FoundryCombat): Promise<void> {
   lastRolledRound.set(combat.id, combat.round);
   await serviceFor(combat).rollForCombat(combat.id);
   // After clear+reroll the sort order changed; point the tracker at the new top.
-  await combat.update({ turn: 0 });
+  // Marked so the group-turns preUpdateCombat hook (src/adapter/group-turns.ts)
+  // never reads this reset as a navigation step - without the marker, a combat
+  // that is a single group and already sits at index 0 would misread this as a
+  // forward step off the end and call nextRound() again, looping forever.
+  await combat.update({ turn: 0 }, { [MODULE_ID]: { resetTurn: true } });
 }
 
 /**
@@ -135,7 +139,7 @@ export function registerHooks(): void {
     if (!combat) return;
     guard("deleteCombatant", async () => {
       await cleanupBossPairOnDelete(combatant, combat);
-      await sweepEmptyGroups(combat);
+      await sweepEmptyGroup(combat, groupIdOf(combatant));
     });
   });
 

@@ -155,7 +155,7 @@ interface FoundryCombat {
   createEmbeddedDocuments(type: string, data: object[]): Promise<FoundryCombatant[]>;
   updateEmbeddedDocuments(type: string, updates: object[]): Promise<unknown[]>;
   deleteEmbeddedDocuments(type: string, ids: string[]): Promise<unknown[]>;
-  update(data: object): Promise<FoundryCombat>;
+  update(data: object, options?: object): Promise<FoundryCombat>;
   /** The scene this combat is linked to, or null when unlinked. */
   readonly scene: { id: string } | null;
   /** True for the combat the tracker is showing. */

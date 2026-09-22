@@ -40,16 +40,29 @@ export function registerGroupTurns(): void {
   Hooks.once("setup", patchSort);
   Hooks.on(
     "preUpdateCombat",
-    (combat: FoundryCombat, changes: { turn?: unknown; round?: unknown }, options: { direction?: number }): boolean | void => {
+    (
+      combat: FoundryCombat,
+      changes: { turn?: unknown; round?: unknown },
+      options: { direction?: number } & Record<string, unknown>
+    ): boolean | void => {
       if (typeof changes.turn !== "number") return;
       if (typeof changes.round === "number" && changes.round > combat.round) return;
+      const marker = options[MODULE_ID];
+      if (marker && typeof marker === "object" && (marker as { resetTurn?: unknown }).resetTurn === true) return;
       const from = combat.turn;
-      const direction: 1 | -1 =
-        options.direction === -1 || options.direction === 1
-          ? options.direction
-          : changes.turn < (from ?? -1)
-            ? -1
-            : 1;
+      let direction: 1 | -1;
+      if (options.direction === -1 || options.direction === 1) {
+        direction = options.direction;
+      } else if (changes.turn === (from ?? -1) + 1) {
+        direction = 1;
+      } else if (changes.turn === (from ?? -1) - 1) {
+        direction = -1;
+      } else {
+        // Direction-less, non-adjacent change (e.g. a reset update to the same
+        // or an arbitrary index): leave it untouched rather than misreading it
+        // as a step.
+        return;
+      }
       const turns: TurnRef[] = combat.turns.map((c) => ({
         id: c.id,
         groupId: groupIdOf(c),
