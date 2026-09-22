@@ -1819,6 +1819,84 @@ function registerTokenHudButton() {
   });
 }
 
+// src/logic/turns.ts
+function adjustTurn(turns, from, to, direction, skipDefeated) {
+  if (from === null || to < 0 || to >= turns.length) return { kind: "keep" };
+  if (direction === 1) {
+    const groupId2 = turns[from]?.groupId ?? null;
+    if (groupId2 === null) return { kind: "keep" };
+    let index2 = to;
+    while (index2 < turns.length) {
+      const entry = turns[index2];
+      if (!entry) break;
+      const sameGroup = entry.groupId === groupId2;
+      const skippable = skipDefeated && entry.defeated;
+      if (!sameGroup && !skippable) break;
+      index2 += 1;
+    }
+    if (index2 >= turns.length) return { kind: "nextRound" };
+    return index2 === to ? { kind: "keep" } : { kind: "set", turn: index2 };
+  }
+  const groupId = turns[to]?.groupId ?? null;
+  if (groupId === null) return { kind: "keep" };
+  let index = to;
+  while (index > 0 && turns[index - 1]?.groupId === groupId) index -= 1;
+  return index === to ? { kind: "keep" } : { kind: "set", turn: index };
+}
+function groupTieBreak(a, b) {
+  if (a.initiative === null || b.initiative === null || a.initiative !== b.initiative) return 0;
+  const keyA = a.groupId ?? "";
+  const keyB = b.groupId ?? "";
+  if (keyA === keyB) return 0;
+  return keyA < keyB ? -1 : 1;
+}
+
+// src/adapter/group-turns.ts
+var SORT_PATCHED = "__tacticalInitiativeGroupSortPatched";
+function patchSort() {
+  const proto = CONFIG.Combat?.documentClass?.prototype;
+  if (!proto || proto[SORT_PATCHED] === true) return;
+  const original = proto["_sortCombatants"];
+  if (typeof original !== "function") {
+    console.warn(`${MODULE_ID} | Combat#_sortCombatants not found; group members may interleave on ties`);
+    return;
+  }
+  const sort = original;
+  proto["_sortCombatants"] = function(a, b) {
+    const tie = groupTieBreak(
+      { initiative: a.initiative, groupId: groupIdOf(a) },
+      { initiative: b.initiative, groupId: groupIdOf(b) }
+    );
+    return tie !== 0 ? tie : sort.call(this, a, b);
+  };
+  proto[SORT_PATCHED] = true;
+}
+function registerGroupTurns() {
+  Hooks.once("setup", patchSort);
+  Hooks.on(
+    "preUpdateCombat",
+    (combat, changes, options) => {
+      if (typeof changes.turn !== "number") return;
+      if (typeof changes.round === "number" && changes.round > combat.round) return;
+      const from = combat.turn;
+      const direction = options.direction === -1 || options.direction === 1 ? options.direction : changes.turn < (from ?? -1) ? -1 : 1;
+      const turns = combat.turns.map((c) => ({
+        id: c.id,
+        groupId: groupIdOf(c),
+        defeated: c.isDefeated
+      }));
+      const result = adjustTurn(turns, from, changes.turn, direction, combat.settings?.skipDefeated === true);
+      if (result.kind === "set") changes.turn = result.turn;
+      if (result.kind === "nextRound") {
+        guard("group next round", async () => {
+          await combat.nextRound();
+        });
+        return false;
+      }
+    }
+  );
+}
+
 // src/logic/tracker-view.ts
 var DEFAULT_GROUP_COLOR2 = "#8888ff";
 function isVisible(combatant, viewer2) {
@@ -2268,6 +2346,7 @@ Hooks.once("init", () => {
   registerSettings();
   registerQueryHandler();
   registerHooks();
+  registerGroupTurns();
   registerCombatEvents();
   registerTrackerContextMenu();
   registerActorDirectoryContextMenu();

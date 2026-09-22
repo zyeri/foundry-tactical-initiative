@@ -7,6 +7,7 @@
 import { registerCombatEvents } from "./adapter/combat-events";
 import { registerGroupUI } from "./adapter/group-ui";
 import { registerGroupingKeybinding, registerTokenHudButton } from "./adapter/grouping-ui";
+import { registerGroupTurns } from "./adapter/group-turns";
 import { registerTopBar } from "./adapter/top-bar";
 import { registerHooks } from "./adapter/hooks";
 import { registerQueryHandler } from "./adapter/player-query";
@@ -22,6 +23,7 @@ Hooks.once("init", (): void => {
   registerSettings();
   registerQueryHandler();
   registerHooks();
+  registerGroupTurns();
   registerCombatEvents();
   registerTrackerContextMenu();
   registerActorDirectoryContextMenu();
