@@ -98,8 +98,13 @@ interface FoundryCombatant {
   readonly actor: FoundryActor | null;
   readonly initiative: number | null;
   readonly isDefeated: boolean;
-  /** The native CombatantGroup id, or null/empty when ungrouped. */
-  readonly group?: string | null;
+  /**
+   * The native group: v14 resolves this to the CombatantGroup document; older
+   * builds may expose the id. Always read it through `groupIdOf`.
+   */
+  readonly group?: string | FoundryCombatantGroup | null;
+  /** Raw stored data; `group` is the id string. */
+  readonly _source?: { group?: string | null };
   /** The token/combatant display name. */
   readonly name: string;
   /** The combatant portrait image path. */

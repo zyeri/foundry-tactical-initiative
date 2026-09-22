@@ -7,6 +7,7 @@
 
 import { FLAGS, MODULE_ID } from "../constants";
 import { bossSlotInitiative } from "../logic/boss";
+import { groupIdOf } from "../logic/group";
 import { readCombatantTag } from "./tags";
 
 /**
@@ -72,7 +73,7 @@ export async function setupBossCombatant(
   if (readCombatantTag(combatant) !== "boss") return;
   if (slotOf(combatant) !== null) return; // already a slot (guards recursion)
   // Grouped combatants share one initiative and skip the double-turn (B1).
-  if (typeof combatant.group === "string" && combatant.group) return;
+  if (groupIdOf(combatant) !== null) return;
 
   const rank = nextBossRank(combat);
   await combatant.update({

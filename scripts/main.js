@@ -276,12 +276,6 @@ function getKillWindowMs() {
   return Math.max(5, seconds) * 1e3;
 }
 
-// src/logic/boss.ts
-function bossSlotInitiative(slot, rank) {
-  const base = slot === "start" ? BOSS_START_BASE : BOSS_END_BASE;
-  return base - rank;
-}
-
 // src/logic/group.ts
 function partitionByGroup(combatants) {
   const ungrouped = [];
@@ -301,6 +295,20 @@ function partitionByGroup(combatants) {
     group.members.push(combatant);
   }
   return { groups, ungrouped };
+}
+function groupIdOf(c) {
+  const raw = c._source?.group;
+  if (typeof raw === "string" && raw.length > 0) return raw;
+  const field = c.group;
+  if (typeof field === "string") return field.length > 0 ? field : null;
+  if (field && typeof field.id === "string" && field.id.length > 0) return field.id;
+  return null;
+}
+
+// src/logic/boss.ts
+function bossSlotInitiative(slot, rank) {
+  const base = slot === "start" ? BOSS_START_BASE : BOSS_END_BASE;
+  return base - rank;
 }
 
 // src/logic/initiative.ts
@@ -462,7 +470,7 @@ function nextBossRank(combat) {
 async function setupBossCombatant(combatant, combat) {
   if (readCombatantTag(combatant) !== "boss") return;
   if (slotOf(combatant) !== null) return;
-  if (typeof combatant.group === "string" && combatant.group) return;
+  if (groupIdOf(combatant) !== null) return;
   const rank = nextBossRank(combat);
   await combatant.update({
     initiative: bossSlotInitiative("start", rank),
@@ -654,7 +662,7 @@ var FoundryAdapter = class {
         isDefeated: combatant.isDefeated,
         bossSlot: isBossSlot ? slot : null,
         bossRank: isBossSlot && typeof order === "number" ? order : null,
-        groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null
+        groupId: groupIdOf(combatant)
       };
     });
   }
@@ -721,7 +729,7 @@ var FoundryAdapter = class {
   }
   async rollGroupInitiative(groupId) {
     const member = this.combat.combatants.find(
-      (c) => (typeof c.group === "string" ? c.group : null) === groupId
+      (c) => groupIdOf(c) === groupId
     );
     if (!member) return 0;
     const roll = this.buildInitiativeRoll(member);
@@ -779,7 +787,7 @@ function registerHooks() {
     if (!combat) return;
     guard("createCombatant", async () => {
       const tag = readCombatantTag(combatant);
-      const grouped = typeof combatant.group === "string" && combatant.group.length > 0;
+      const grouped = groupIdOf(combatant) !== null;
       if (tag === "boss" && !grouped) await setupBossCombatant(combatant, combat);
       if (combat.started && (grouped || tag !== "boss")) {
         await serviceFor(combat).rollForCombatant(combat.id, combatant.id);
@@ -977,7 +985,7 @@ async function removeFromGroup(combat, combatantIds) {
   const affected = /* @__PURE__ */ new Set();
   for (const id of combatantIds) {
     const combatant = combat.combatants.get(id);
-    const group = combatant && typeof combatant.group === "string" ? combatant.group : null;
+    const group = combatant ? groupIdOf(combatant) : null;
     if (group) affected.add(group);
   }
   await combat.updateEmbeddedDocuments(
@@ -986,7 +994,7 @@ async function removeFromGroup(combat, combatantIds) {
   );
   for (const groupId of affected) {
     const stillHasMembers = combat.combatants.contents.some(
-      (c) => (typeof c.group === "string" ? c.group : null) === groupId
+      (c) => groupIdOf(c) === groupId
     );
     if (!stillHasMembers) await disbandGroup(combat, groupId);
   }
@@ -998,7 +1006,7 @@ async function recolorGroup(combat, groupId, color) {
   await combat.groups.get(groupId)?.setFlag(MODULE_ID, FLAGS.GROUP_COLOR, color);
 }
 async function disbandGroup(combat, groupId) {
-  const memberIds = combat.combatants.contents.filter((c) => (typeof c.group === "string" ? c.group : null) === groupId).map((c) => c.id);
+  const memberIds = combat.combatants.contents.filter((c) => groupIdOf(c) === groupId).map((c) => c.id);
   if (memberIds.length > 0) {
     await combat.updateEmbeddedDocuments(
       "Combatant",
@@ -1080,7 +1088,7 @@ var FoundryGroupControlPort = class {
    * @returns The member refs (empty for an unknown or empty group).
    */
   members(groupId) {
-    return this.combat.combatants.contents.filter((combatant) => (typeof combatant.group === "string" ? combatant.group : null) === groupId).map((combatant) => ({
+    return this.combat.combatants.contents.filter((combatant) => groupIdOf(combatant) === groupId).map((combatant) => ({
       combatantId: combatant.id,
       tokenId: combatant.tokenId,
       actorId: combatant.actorId ?? "",
@@ -1310,8 +1318,7 @@ function clickedGroupId(target) {
   const id = combatantIdFromTarget(target);
   if (!id) return null;
   const location = findCombatant(id);
-  const group = location && typeof location.combatant.group === "string" ? location.combatant.group : null;
-  return group && group.length > 0 ? group : null;
+  return location ? groupIdOf(location.combatant) : null;
 }
 function isGrouped(target) {
   return clickedGroupId(target) !== null;
@@ -1494,7 +1501,7 @@ function decorateTrackerGroups(root) {
       const id = row.dataset["combatantId"];
       if (typeof id !== "string" || id.length === 0) return;
       const combatant = combat.combatants.get(id);
-      const groupId = combatant && typeof combatant.group === "string" ? combatant.group : null;
+      const groupId = combatant ? groupIdOf(combatant) : null;
       if (!groupId || groupId.length === 0) return;
       const group = combat.groups.get(groupId);
       if (!group) return;
@@ -1747,7 +1754,7 @@ function toCombatant(combatant) {
     img: combatant.img ?? null,
     initiative: combatant.initiative,
     tag: readCombatantTag(combatant),
-    groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null,
+    groupId: groupIdOf(combatant),
     hidden: combatant.hidden,
     isDefeated: combatant.isDefeated,
     ownedByViewer: owned,

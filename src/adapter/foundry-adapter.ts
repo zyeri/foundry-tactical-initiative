@@ -7,6 +7,7 @@
 
 import { FLAGS, MODULE_ID, V14_GENERATION, type Choice } from "../constants";
 import { effectChangesFor, toV14Changes } from "../logic/effects";
+import { groupIdOf } from "../logic/group";
 import type { CombatantView, FoundryPort } from "../types";
 import { requestChoiceFromOwner } from "./player-query";
 import { readCombatantTag } from "./tags";
@@ -66,7 +67,7 @@ export class FoundryAdapter implements FoundryPort {
         isDefeated: combatant.isDefeated,
         bossSlot: isBossSlot ? slot : null,
         bossRank: isBossSlot && typeof order === "number" ? order : null,
-        groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null
+        groupId: groupIdOf(combatant)
       };
     });
   }
@@ -151,7 +152,7 @@ export class FoundryAdapter implements FoundryPort {
   public async rollGroupInitiative(groupId: string): Promise<number> {
     // Roll once using a representative member so init bonuses apply, then share it.
     const member = this.combat.combatants.find(
-      (c) => (typeof c.group === "string" ? c.group : null) === groupId
+      (c) => groupIdOf(c) === groupId
     );
     if (!member) return 0;
     const roll = this.buildInitiativeRoll(member);

@@ -5,6 +5,7 @@
  */
 
 import { FLAGS, MODULE_ID } from "../constants";
+import { groupIdOf } from "../logic/group";
 import { tearDownBossSlots } from "./boss-slots";
 
 /** Default color for a new group tag. */
@@ -60,7 +61,7 @@ export async function removeFromGroup(
   const affected = new Set<string>();
   for (const id of combatantIds) {
     const combatant = combat.combatants.get(id);
-    const group = combatant && typeof combatant.group === "string" ? combatant.group : null;
+    const group = combatant ? groupIdOf(combatant) : null;
     if (group) affected.add(group);
   }
   await combat.updateEmbeddedDocuments(
@@ -69,7 +70,7 @@ export async function removeFromGroup(
   );
   for (const groupId of affected) {
     const stillHasMembers = combat.combatants.contents.some(
-      (c) => (typeof c.group === "string" ? c.group : null) === groupId
+      (c) => groupIdOf(c) === groupId
     );
     if (!stillHasMembers) await disbandGroup(combat, groupId);
   }
@@ -105,7 +106,7 @@ export async function recolorGroup(combat: FoundryCombat, groupId: string, color
  */
 export async function disbandGroup(combat: FoundryCombat, groupId: string): Promise<void> {
   const memberIds = combat.combatants.contents
-    .filter((c) => (typeof c.group === "string" ? c.group : null) === groupId)
+    .filter((c) => groupIdOf(c) === groupId)
     .map((c) => c.id);
   if (memberIds.length > 0) {
     await combat.updateEmbeddedDocuments(

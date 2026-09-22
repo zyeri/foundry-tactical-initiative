@@ -7,6 +7,7 @@
  */
 
 import { MODULE_ID } from "../constants";
+import { groupIdOf } from "../logic/group";
 import {
   addToGroup,
   DEFAULT_GROUP_COLOR,
@@ -95,8 +96,7 @@ function clickedGroupId(target: unknown): string | null {
   const id = combatantIdFromTarget(target);
   if (!id) return null;
   const location = findCombatant(id);
-  const group = location && typeof location.combatant.group === "string" ? location.combatant.group : null;
-  return group && group.length > 0 ? group : null;
+  return location ? groupIdOf(location.combatant) : null;
 }
 
 /** Whether the right-clicked combatant is in a group (menu-visibility guard). */
@@ -385,7 +385,7 @@ function decorateTrackerGroups(root: HTMLElement): void {
       const id = row.dataset["combatantId"];
       if (typeof id !== "string" || id.length === 0) return;
       const combatant = combat.combatants.get(id);
-      const groupId = combatant && typeof combatant.group === "string" ? combatant.group : null;
+      const groupId = combatant ? groupIdOf(combatant) : null;
       if (!groupId || groupId.length === 0) return;
       const group = combat.groups.get(groupId);
       if (!group) return;

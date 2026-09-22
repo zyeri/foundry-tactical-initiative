@@ -6,6 +6,7 @@
  */
 
 import { FLAGS, MODULE_ID } from "../constants";
+import { groupIdOf } from "../logic/group";
 import { TacticalInitiative } from "../service";
 import { getPlayerTimeoutMs } from "../settings";
 import {
@@ -108,7 +109,7 @@ export function registerHooks(): void {
     if (!combat) return;
     guard("createCombatant", async () => {
       const tag = readCombatantTag(combatant);
-      const grouped = typeof combatant.group === "string" && combatant.group.length > 0;
+      const grouped = groupIdOf(combatant) !== null;
       // A grouped combatant shares its group's initiative and gets no boss slots.
       if (tag === "boss" && !grouped) await setupBossCombatant(combatant, combat);
       // Mid-round join: grouped combatants and non-boss tags roll immediately;

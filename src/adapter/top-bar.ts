@@ -6,6 +6,7 @@
  */
 
 import { MODULE_ID, SETTINGS } from "../constants";
+import { groupIdOf } from "../logic/group";
 import {
   buildTrackerView,
   type TrackerCombatant,
@@ -49,7 +50,7 @@ function toCombatant(combatant: FoundryCombatant): TrackerCombatant {
     img: combatant.img ?? null,
     initiative: combatant.initiative,
     tag: readCombatantTag(combatant),
-    groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null,
+    groupId: groupIdOf(combatant),
     hidden: combatant.hidden,
     isDefeated: combatant.isDefeated,
     ownedByViewer: owned,
