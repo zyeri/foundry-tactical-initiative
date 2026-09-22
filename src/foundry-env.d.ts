@@ -74,6 +74,10 @@ interface FoundryTokenDocument {
   /** The scene this token belongs to. */
   readonly parent: { id: string } | null;
   update(data: object): Promise<FoundryTokenDocument>;
+  /** The token's actor (synthetic for unlinked tokens). */
+  readonly actor?: FoundryActor | null;
+  /** True when the token is hidden from players. */
+  readonly hidden?: boolean;
 }
 
 /** A ChatMessage document (subset used to capture dnd5e damage cards). */
@@ -152,6 +156,16 @@ interface FoundryCombat {
   updateEmbeddedDocuments(type: string, updates: object[]): Promise<unknown[]>;
   deleteEmbeddedDocuments(type: string, ids: string[]): Promise<unknown[]>;
   update(data: object): Promise<FoundryCombat>;
+  /** The scene this combat is linked to, or null when unlinked. */
+  readonly scene: { id: string } | null;
+  /** True for the combat the tracker is showing. */
+  readonly active: boolean;
+  /** Current turn index, or null before the first turn. */
+  readonly turn: number | null;
+  /** Combat settings (core). */
+  readonly settings?: { skipDefeated?: boolean };
+  /** Make this the active combat. */
+  activate(): Promise<unknown>;
 }
 
 /** A Foundry User document (subset). */
@@ -197,6 +211,11 @@ interface FoundryGame {
   readonly combats: (FoundryCollection<FoundryCombat> & { active: FoundryCombat | null }) | null;
   readonly settings: FoundrySettings;
   readonly i18n: FoundryI18n;
+  /** The combat viewed by this client, or null. */
+  readonly combat?: FoundryCombat | null;
+  readonly keybindings: {
+    register(namespace: string, action: string, data: object): void;
+  };
 }
 
 /** A DialogV2 button definition. */
@@ -204,6 +223,7 @@ interface DialogV2Button {
   action: string;
   label: string;
   default?: boolean;
+  callback?: (event: Event, button: HTMLButtonElement, dialog: unknown) => unknown;
 }
 
 /** DialogV2.wait configuration (subset). */
@@ -233,7 +253,7 @@ interface DialogV2PromptConfig {
 
 /** The DialogV2 application class (subset). */
 interface DialogV2Static {
-  wait(config: DialogV2WaitConfig): Promise<string | null>;
+  wait(config: DialogV2WaitConfig): Promise<unknown>;
   /** Resolves to the ok button's callback return value; rejects if dismissed. */
   prompt(config: DialogV2PromptConfig): Promise<unknown>;
 }
@@ -289,11 +309,17 @@ interface TokenObject {
   setTarget(targeted: boolean, options?: { releaseOthers?: boolean }): void;
   /** The token's canvas center, for panning. */
   readonly center?: { x: number; y: number };
+  readonly id: string;
+  readonly document: FoundryTokenDocument;
 }
 
 /** The canvas global (subset): the token layer's placeables lookup. */
 declare const canvas: {
-  tokens?: { get(id: string): TokenObject | undefined } | null;
+  scene?: { id: string } | null;
+  tokens?: {
+    get(id: string): TokenObject | undefined;
+    readonly controlled?: TokenObject[];
+  } | null;
   pan?(options: { x?: number; y?: number; scale?: number }): void;
 };
 

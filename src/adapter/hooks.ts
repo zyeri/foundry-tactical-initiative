@@ -15,6 +15,7 @@ import {
   syncBossDefeat
 } from "./boss-slots";
 import { FoundryAdapter } from "./foundry-adapter";
+import { sweepEmptyGroups } from "./groups";
 import { readCombatantTag } from "./tags";
 
 /**
@@ -132,7 +133,10 @@ export function registerHooks(): void {
     if (!isActiveGM()) return;
     const combat = combatant.combat;
     if (!combat) return;
-    guard("deleteCombatant", () => cleanupBossPairOnDelete(combatant, combat));
+    guard("deleteCombatant", async () => {
+      await cleanupBossPairOnDelete(combatant, combat);
+      await sweepEmptyGroups(combat);
+    });
   });
 
   Hooks.on("deleteCombat", (combat: FoundryCombat): void => {

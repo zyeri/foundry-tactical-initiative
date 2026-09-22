@@ -131,3 +131,9 @@ export const SETTINGS = {
 
 /** Default staleness window (seconds) for F5 kill attribution. */
 export const DEFAULT_KILL_WINDOW_SECONDS = 45 as const;
+
+/** Keybinding action ids. */
+export const KEYBINDINGS = {
+  /** GM: group the controlled tokens (default G). */
+  GROUP_SELECTED: "groupSelected"
+} as const;

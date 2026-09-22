@@ -6,47 +6,10 @@
 
 import { FLAGS, MODULE_ID } from "../constants";
 import { groupIdOf } from "../logic/group";
-import { tearDownBossSlots } from "./boss-slots";
+import { reconcileBossOnRetag } from "./boss-slots";
 
 /** Default color for a new group tag. */
 export const DEFAULT_GROUP_COLOR = "#8888ff";
-
-/**
- * Add combatants to a group, creating a new group when `groupId` is `null`.
- *
- * @param combat - The combat that owns the combatants and groups.
- * @param combatantIds - The combatants to add.
- * @param groupId - An existing group id, or `null` to create a new group.
- */
-export async function addToGroup(
-  combat: FoundryCombat,
-  combatantIds: readonly string[],
-  groupId: string | null
-): Promise<void> {
-  if (combatantIds.length === 0) return;
-  let targetId = groupId;
-  if (targetId === null) {
-    const name = game.i18n.format("TACTICAL_INITIATIVE.Group.DefaultName", {
-      n: String(combat.groups.size + 1)
-    });
-    const created = (await combat.createEmbeddedDocuments("CombatantGroup", [
-      { name, flags: { [MODULE_ID]: { [FLAGS.GROUP_COLOR]: DEFAULT_GROUP_COLOR } } }
-    ])) as unknown as FoundryCombatantGroup[];
-    const group = created[0];
-    if (!group) return;
-    targetId = group.id;
-  }
-  await combat.updateEmbeddedDocuments(
-    "Combatant",
-    combatantIds.map((id) => ({ _id: id, group: targetId }))
-  );
-  // A grouped boss takes one shared-initiative turn, so tear down any existing
-  // start/end double-turn slots (cascade-safe).
-  for (const id of combatantIds) {
-    const combatant = combat.combatants.get(id);
-    if (combatant) await tearDownBossSlots(combatant, combat);
-  }
-}
 
 /**
  * Remove combatants from their group, disbanding any group left empty.
@@ -68,6 +31,11 @@ export async function removeFromGroup(
     "Combatant",
     combatantIds.map((id) => ({ _id: id, group: null }))
   );
+  // A boss leaving a group regains its double-turn slots.
+  for (const id of combatantIds) {
+    const combatant = combat.combatants.get(id);
+    if (combatant) await reconcileBossOnRetag(combatant, combat);
+  }
   for (const groupId of affected) {
     const stillHasMembers = combat.combatants.contents.some(
       (c) => groupIdOf(c) === groupId
@@ -126,4 +94,16 @@ export async function disbandGroup(combat: FoundryCombat, groupId: string): Prom
 export function groupColor(group: FoundryCombatantGroup): string {
   const color = group.getFlag(MODULE_ID, FLAGS.GROUP_COLOR);
   return typeof color === "string" ? color : DEFAULT_GROUP_COLOR;
+}
+
+/**
+ * Delete every group in the combat that has no members left (after a combatant
+ * is deleted by F4 mob cleanup, a manual delete, or core token cleanup).
+ *
+ * @param combat - The combat.
+ */
+export async function sweepEmptyGroups(combat: FoundryCombat): Promise<void> {
+  const used = new Set(combat.combatants.contents.map((c) => groupIdOf(c)));
+  const empty = combat.groups.contents.filter((group) => !used.has(group.id)).map((group) => group.id);
+  if (empty.length > 0) await combat.deleteEmbeddedDocuments("CombatantGroup", empty);
 }

@@ -1,15 +1,14 @@
 /**
- * @file Group UI: combat-tracker context-menu entries to create and manage
- * combatant groups (add the ctrl-selected rows to a new group, remove, rename,
- * recolor, disband) plus a colored group tag rendered on each grouped row.
- * Mirrors the robust tracker-context wrap in tagging-ui.ts so it works with
- * replacement trackers. Foundry boundary: not unit-tested; manual checklist.
+ * @file Group UI: combat-tracker context-menu entries to manage combatant groups
+ * (remove, rename, recolor, disband). Group rows themselves are rendered by the
+ * dnd5e combat tracker (native CombatantGroups). Mirrors the robust tracker-
+ * context wrap in tagging-ui.ts so it works with replacement trackers. Foundry
+ * boundary: not unit-tested; manual checklist.
  */
 
-import { MODULE_ID } from "../constants";
 import { groupIdOf } from "../logic/group";
+import { runSafe } from "../ui/run-safe";
 import {
-  addToGroup,
   DEFAULT_GROUP_COLOR,
   disbandGroup,
   groupColor,
@@ -52,38 +51,6 @@ function combatantIdFromTarget(target: unknown): string | null {
   const element = resolveElement(target);
   const id = element?.dataset["combatantId"];
   return typeof id === "string" ? id : null;
-}
-
-/**
- * The combatant ids the GM wants to group: the ctrl-selected tracker rows if the
- * active tracker exposes a multi-selection, always including the right-clicked
- * row. The exact selected-row signal is a live probe (README), so this reads a
- * generous set of candidate selectors and falls back to the clicked row alone.
- *
- * @param target - The context-menu callback target.
- * @returns The combatant ids to group (at least the clicked one).
- */
-function selectedCombatantIds(target: unknown): string[] {
-  const ids = new Set<string>();
-  const clicked = combatantIdFromTarget(target);
-  if (clicked) ids.add(clicked);
-  try {
-    const element = resolveElement(target);
-    const tracker =
-      element?.closest<HTMLElement>("#combat, .combat-tracker, section.combat, [data-tab='combat']") ??
-      element?.ownerDocument.body ??
-      null;
-    const selected = tracker?.querySelectorAll<HTMLElement>(
-      ".combatant.selected, li.combatant[aria-selected='true'], .combatant.active-selection"
-    );
-    selected?.forEach((row) => {
-      const id = row.dataset["combatantId"];
-      if (typeof id === "string" && id.length > 0) ids.add(id);
-    });
-  } catch {
-    // Best-effort multi-select; the clicked row is always included above.
-  }
-  return [...ids];
 }
 
 /**
@@ -191,19 +158,6 @@ async function promptForColor(current: string): Promise<string | null> {
 }
 
 /**
- * Create a new group from the ctrl-selected tracker rows (or the clicked row).
- *
- * @param target - The context-menu callback target.
- */
-async function addSelectionToNewGroup(target: unknown): Promise<void> {
-  const id = combatantIdFromTarget(target);
-  if (!id) return;
-  const location = findCombatant(id);
-  if (!location) return;
-  await addToGroup(location.combat, selectedCombatantIds(target), null);
-}
-
-/**
  * Remove the right-clicked combatant from its group.
  *
  * @param target - The context-menu callback target.
@@ -217,6 +171,30 @@ async function removeClickedFromGroup(target: unknown): Promise<void> {
 }
 
 /**
+ * Prompt for and apply a new group name.
+ *
+ * @param combat - The combat.
+ * @param groupId - The group id.
+ */
+export async function renameGroupInteractive(combat: FoundryCombat, groupId: string): Promise<void> {
+  const current = combat.groups.get(groupId)?.name ?? "";
+  const name = await promptForText("TACTICAL_INITIATIVE.Group.Rename", current);
+  if (name !== null && name.length > 0) await renameGroup(combat, groupId, name);
+}
+
+/**
+ * Prompt for and apply a new group color.
+ *
+ * @param combat - The combat.
+ * @param groupId - The group id.
+ */
+export async function recolorGroupInteractive(combat: FoundryCombat, groupId: string): Promise<void> {
+  const group = combat.groups.get(groupId);
+  const color = await promptForColor(group ? groupColor(group) : DEFAULT_GROUP_COLOR);
+  if (color !== null && color.length > 0) await recolorGroup(combat, groupId, color);
+}
+
+/**
  * Rename the right-clicked combatant's group.
  *
  * @param target - The context-menu callback target.
@@ -224,12 +202,8 @@ async function removeClickedFromGroup(target: unknown): Promise<void> {
 async function renameClickedGroup(target: unknown): Promise<void> {
   const id = combatantIdFromTarget(target);
   const groupId = clickedGroupId(target);
-  if (!id || !groupId) return;
-  const location = findCombatant(id);
-  if (!location) return;
-  const current = location.combat.groups.get(groupId)?.name ?? "";
-  const name = await promptForText("TACTICAL_INITIATIVE.Group.Rename", current);
-  if (name !== null && name.length > 0) await renameGroup(location.combat, groupId, name);
+  const location = id ? findCombatant(id) : null;
+  if (location && groupId) await renameGroupInteractive(location.combat, groupId);
 }
 
 /**
@@ -240,13 +214,8 @@ async function renameClickedGroup(target: unknown): Promise<void> {
 async function recolorClickedGroup(target: unknown): Promise<void> {
   const id = combatantIdFromTarget(target);
   const groupId = clickedGroupId(target);
-  if (!id || !groupId) return;
-  const location = findCombatant(id);
-  if (!location) return;
-  const group = location.combat.groups.get(groupId);
-  const current = group ? groupColor(group) : DEFAULT_GROUP_COLOR;
-  const color = await promptForColor(current);
-  if (color !== null && color.length > 0) await recolorGroup(location.combat, groupId, color);
+  const location = id ? findCombatant(id) : null;
+  if (location && groupId) await recolorGroupInteractive(location.combat, groupId);
 }
 
 /**
@@ -265,20 +234,12 @@ async function disbandClickedGroup(target: unknown): Promise<void> {
 
 /**
  * Push this module's group-management options onto a tracker context menu.
- * "Add to group" is always available (GM); the rest show only on a grouped row.
+ * All entries show only on a grouped row and only for the GM.
  *
  * @param options - The context-menu entry array to append to.
  */
 export function pushGroupOptions(options: ContextMenuEntry[]): void {
   const isGM = (): boolean => game.user?.isGM === true;
-  options.push({
-    name: game.i18n.localize("TACTICAL_INITIATIVE.Group.AddTo"),
-    icon: `<i class="fas fa-object-group"></i>`,
-    condition: (): boolean => isGM(),
-    callback: (target: unknown): void => {
-      void addSelectionToNewGroup(target);
-    }
-  });
   options.push({
     name: game.i18n.localize("TACTICAL_INITIATIVE.HUD.Open"),
     icon: `<i class="fas fa-gauge-high"></i>`,
@@ -292,7 +253,7 @@ export function pushGroupOptions(options: ContextMenuEntry[]): void {
     icon: `<i class="fas fa-object-ungroup"></i>`,
     condition: (target?: unknown): boolean => isGM() && isGrouped(target),
     callback: (target: unknown): void => {
-      void removeClickedFromGroup(target);
+      void runSafe("remove from group", () => removeClickedFromGroup(target));
     }
   });
   options.push({
@@ -300,7 +261,7 @@ export function pushGroupOptions(options: ContextMenuEntry[]): void {
     icon: `<i class="fas fa-pen"></i>`,
     condition: (target?: unknown): boolean => isGM() && isGrouped(target),
     callback: (target: unknown): void => {
-      void renameClickedGroup(target);
+      void runSafe("rename group", () => renameClickedGroup(target));
     }
   });
   options.push({
@@ -308,7 +269,7 @@ export function pushGroupOptions(options: ContextMenuEntry[]): void {
     icon: `<i class="fas fa-palette"></i>`,
     condition: (target?: unknown): boolean => isGM() && isGrouped(target),
     callback: (target: unknown): void => {
-      void recolorClickedGroup(target);
+      void runSafe("recolor group", () => recolorClickedGroup(target));
     }
   });
   options.push({
@@ -316,7 +277,7 @@ export function pushGroupOptions(options: ContextMenuEntry[]): void {
     icon: `<i class="fas fa-users-slash"></i>`,
     condition: (target?: unknown): boolean => isGM() && isGrouped(target),
     callback: (target: unknown): void => {
-      void disbandClickedGroup(target);
+      void runSafe("disband group", () => disbandClickedGroup(target));
     }
   });
 }
@@ -369,44 +330,9 @@ function tryPatchTracker(): boolean {
 }
 
 /**
- * Render a colored group tag on each grouped combatant row. Best-effort and
- * idempotent; wrapped so a failure never breaks the tracker render. Whether the
- * core tracker also renders native group rows is a live probe (README); this
- * decorates member rows, which exist regardless.
- *
- * @param root - The tracker root element.
- */
-function decorateTrackerGroups(root: HTMLElement): void {
-  try {
-    const combat = game.combats?.active ?? null;
-    if (!combat) return;
-    const rows = root.querySelectorAll<HTMLElement>(".combatant[data-combatant-id]");
-    rows.forEach((row) => {
-      const id = row.dataset["combatantId"];
-      if (typeof id !== "string" || id.length === 0) return;
-      const combatant = combat.combatants.get(id);
-      const groupId = combatant ? groupIdOf(combatant) : null;
-      if (!groupId || groupId.length === 0) return;
-      const group = combat.groups.get(groupId);
-      if (!group) return;
-      if (row.querySelector(`.${MODULE_ID}-group-tag`)) return;
-      const tag = document.createElement("span");
-      tag.className = `${MODULE_ID}-group-tag`;
-      tag.textContent = group.name;
-      tag.title = group.name;
-      tag.style.backgroundColor = groupColor(group);
-      const anchor = row.querySelector<HTMLElement>(".token-name, .combatant-name, .name") ?? row;
-      anchor.appendChild(tag);
-    });
-  } catch {
-    // Best-effort decoration; never break the tracker render.
-  }
-}
-
-/**
- * Register the group tracker UI: the context-menu options (via the robust
+ * Register the group tracker UI: the context-menu options, via the robust
  * prototype wrap, falling back to the `getCombatantContextOptions` hook fired by
- * the core sidebar tracker only) and the colored group tag on each grouped row.
+ * the core sidebar tracker only. Group rows themselves are rendered by dnd5e.
  */
 export function registerGroupUI(): void {
   Hooks.once("ready", (): void => {
@@ -414,9 +340,5 @@ export function registerGroupUI(): void {
     Hooks.on("getCombatantContextOptions", (_appOrHtml: unknown, options: ContextMenuEntry[]): void => {
       pushGroupOptions(options);
     });
-  });
-  Hooks.on("renderCombatTracker", (_app: unknown, html: unknown): void => {
-    const root = resolveElement(html);
-    if (root) decorateTrackerGroups(root);
   });
 }

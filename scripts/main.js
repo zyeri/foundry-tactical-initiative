@@ -57,6 +57,10 @@ var SETTINGS = {
   PLAYER_HP_POLICY: "playerHpPolicy"
 };
 var DEFAULT_KILL_WINDOW_SECONDS = 45;
+var KEYBINDINGS = {
+  /** GM: group the controlled tokens (default G). */
+  GROUP_SELECTED: "groupSelected"
+};
 
 // src/logic/death.ts
 function crossedToZero(previousHp, newHp) {
@@ -303,6 +307,40 @@ function groupIdOf(c) {
   if (typeof field === "string") return field.length > 0 ? field : null;
   if (field && typeof field.id === "string" && field.id.length > 0) return field.id;
   return null;
+}
+function resolveGroupChoice(selected, groups) {
+  if (selected.length === 0) return { kind: "none" };
+  if (groups.length === 0) return { kind: "create" };
+  return {
+    kind: "prompt",
+    options: [...groups],
+    offerRemove: selected.some((sel) => sel.groupId !== null)
+  };
+}
+function majorityName(names) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const raw of names) {
+    const name = raw.trim();
+    if (name.length === 0) continue;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  let best = null;
+  let bestCount = 0;
+  for (const [name, count] of counts) {
+    if (count > bestCount) {
+      best = name;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+function nextGroupName(existing, base) {
+  const taken = new Set(existing);
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base} ${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
 }
 
 // src/logic/boss.ts
@@ -742,6 +780,56 @@ var FoundryAdapter = class {
   }
 };
 
+// src/adapter/groups.ts
+var DEFAULT_GROUP_COLOR = "#8888ff";
+async function removeFromGroup(combat, combatantIds) {
+  const affected = /* @__PURE__ */ new Set();
+  for (const id of combatantIds) {
+    const combatant = combat.combatants.get(id);
+    const group = combatant ? groupIdOf(combatant) : null;
+    if (group) affected.add(group);
+  }
+  await combat.updateEmbeddedDocuments(
+    "Combatant",
+    combatantIds.map((id) => ({ _id: id, group: null }))
+  );
+  for (const id of combatantIds) {
+    const combatant = combat.combatants.get(id);
+    if (combatant) await reconcileBossOnRetag(combatant, combat);
+  }
+  for (const groupId of affected) {
+    const stillHasMembers = combat.combatants.contents.some(
+      (c) => groupIdOf(c) === groupId
+    );
+    if (!stillHasMembers) await disbandGroup(combat, groupId);
+  }
+}
+async function renameGroup(combat, groupId, name) {
+  await combat.groups.get(groupId)?.update({ name });
+}
+async function recolorGroup(combat, groupId, color) {
+  await combat.groups.get(groupId)?.setFlag(MODULE_ID, FLAGS.GROUP_COLOR, color);
+}
+async function disbandGroup(combat, groupId) {
+  const memberIds = combat.combatants.contents.filter((c) => groupIdOf(c) === groupId).map((c) => c.id);
+  if (memberIds.length > 0) {
+    await combat.updateEmbeddedDocuments(
+      "Combatant",
+      memberIds.map((id) => ({ _id: id, group: null }))
+    );
+  }
+  await combat.deleteEmbeddedDocuments("CombatantGroup", [groupId]);
+}
+function groupColor(group) {
+  const color = group.getFlag(MODULE_ID, FLAGS.GROUP_COLOR);
+  return typeof color === "string" ? color : DEFAULT_GROUP_COLOR;
+}
+async function sweepEmptyGroups(combat) {
+  const used = new Set(combat.combatants.contents.map((c) => groupIdOf(c)));
+  const empty = combat.groups.contents.filter((group) => !used.has(group.id)).map((group) => group.id);
+  if (empty.length > 0) await combat.deleteEmbeddedDocuments("CombatantGroup", empty);
+}
+
 // src/adapter/hooks.ts
 function isActiveGM() {
   return game.user?.isGM === true && game.users?.activeGM === game.user;
@@ -805,7 +893,10 @@ function registerHooks() {
     if (!isActiveGM()) return;
     const combat = combatant.combat;
     if (!combat) return;
-    guard("deleteCombatant", () => cleanupBossPairOnDelete(combatant, combat));
+    guard("deleteCombatant", async () => {
+      await cleanupBossPairOnDelete(combatant, combat);
+      await sweepEmptyGroups(combat);
+    });
   });
   Hooks.on("deleteCombat", (combat) => {
     lastRolledRound.delete(combat.id);
@@ -956,68 +1047,19 @@ function registerCombatEvents() {
   });
 }
 
-// src/adapter/groups.ts
-var DEFAULT_GROUP_COLOR = "#8888ff";
-async function addToGroup(combat, combatantIds, groupId) {
-  if (combatantIds.length === 0) return;
-  let targetId = groupId;
-  if (targetId === null) {
-    const name = game.i18n.format("TACTICAL_INITIATIVE.Group.DefaultName", {
-      n: String(combat.groups.size + 1)
-    });
-    const created = await combat.createEmbeddedDocuments("CombatantGroup", [
-      { name, flags: { [MODULE_ID]: { [FLAGS.GROUP_COLOR]: DEFAULT_GROUP_COLOR } } }
-    ]);
-    const group = created[0];
-    if (!group) return;
-    targetId = group.id;
-  }
-  await combat.updateEmbeddedDocuments(
-    "Combatant",
-    combatantIds.map((id) => ({ _id: id, group: targetId }))
+// src/ui/run-safe.ts
+var defaultReport = (label, error) => {
+  console.error(`tactical-initiative | ${label}`, error);
+  const notes = globalThis.ui?.notifications;
+  notes?.error?.(`Tactical Initiative: ${label} failed; see console (F12).`);
+};
+function runSafe(label, fn, report = defaultReport) {
+  return Promise.resolve().then(fn).then(
+    () => void 0,
+    (error) => {
+      report(label, error);
+    }
   );
-  for (const id of combatantIds) {
-    const combatant = combat.combatants.get(id);
-    if (combatant) await tearDownBossSlots(combatant, combat);
-  }
-}
-async function removeFromGroup(combat, combatantIds) {
-  const affected = /* @__PURE__ */ new Set();
-  for (const id of combatantIds) {
-    const combatant = combat.combatants.get(id);
-    const group = combatant ? groupIdOf(combatant) : null;
-    if (group) affected.add(group);
-  }
-  await combat.updateEmbeddedDocuments(
-    "Combatant",
-    combatantIds.map((id) => ({ _id: id, group: null }))
-  );
-  for (const groupId of affected) {
-    const stillHasMembers = combat.combatants.contents.some(
-      (c) => groupIdOf(c) === groupId
-    );
-    if (!stillHasMembers) await disbandGroup(combat, groupId);
-  }
-}
-async function renameGroup(combat, groupId, name) {
-  await combat.groups.get(groupId)?.update({ name });
-}
-async function recolorGroup(combat, groupId, color) {
-  await combat.groups.get(groupId)?.setFlag(MODULE_ID, FLAGS.GROUP_COLOR, color);
-}
-async function disbandGroup(combat, groupId) {
-  const memberIds = combat.combatants.contents.filter((c) => groupIdOf(c) === groupId).map((c) => c.id);
-  if (memberIds.length > 0) {
-    await combat.updateEmbeddedDocuments(
-      "Combatant",
-      memberIds.map((id) => ({ _id: id, group: null }))
-    );
-  }
-  await combat.deleteEmbeddedDocuments("CombatantGroup", [groupId]);
-}
-function groupColor(group) {
-  const color = group.getFlag(MODULE_ID, FLAGS.GROUP_COLOR);
-  return typeof color === "string" ? color : DEFAULT_GROUP_COLOR;
 }
 
 // src/group-control-service.ts
@@ -1296,24 +1338,6 @@ function combatantIdFromTarget(target) {
   const id = element?.dataset["combatantId"];
   return typeof id === "string" ? id : null;
 }
-function selectedCombatantIds(target) {
-  const ids = /* @__PURE__ */ new Set();
-  const clicked = combatantIdFromTarget(target);
-  if (clicked) ids.add(clicked);
-  try {
-    const element = resolveElement(target);
-    const tracker = element?.closest("#combat, .combat-tracker, section.combat, [data-tab='combat']") ?? element?.ownerDocument.body ?? null;
-    const selected = tracker?.querySelectorAll(
-      ".combatant.selected, li.combatant[aria-selected='true'], .combatant.active-selection"
-    );
-    selected?.forEach((row) => {
-      const id = row.dataset["combatantId"];
-      if (typeof id === "string" && id.length > 0) ids.add(id);
-    });
-  } catch {
-  }
-  return [...ids];
-}
 function clickedGroupId(target) {
   const id = combatantIdFromTarget(target);
   if (!id) return null;
@@ -1370,13 +1394,6 @@ async function promptForColor(current) {
     return null;
   }
 }
-async function addSelectionToNewGroup(target) {
-  const id = combatantIdFromTarget(target);
-  if (!id) return;
-  const location = findCombatant(id);
-  if (!location) return;
-  await addToGroup(location.combat, selectedCombatantIds(target), null);
-}
 async function removeClickedFromGroup(target) {
   const id = combatantIdFromTarget(target);
   if (!id) return;
@@ -1384,26 +1401,27 @@ async function removeClickedFromGroup(target) {
   if (!location) return;
   await removeFromGroup(location.combat, [id]);
 }
+async function renameGroupInteractive(combat, groupId) {
+  const current = combat.groups.get(groupId)?.name ?? "";
+  const name = await promptForText("TACTICAL_INITIATIVE.Group.Rename", current);
+  if (name !== null && name.length > 0) await renameGroup(combat, groupId, name);
+}
+async function recolorGroupInteractive(combat, groupId) {
+  const group = combat.groups.get(groupId);
+  const color = await promptForColor(group ? groupColor(group) : DEFAULT_GROUP_COLOR);
+  if (color !== null && color.length > 0) await recolorGroup(combat, groupId, color);
+}
 async function renameClickedGroup(target) {
   const id = combatantIdFromTarget(target);
   const groupId = clickedGroupId(target);
-  if (!id || !groupId) return;
-  const location = findCombatant(id);
-  if (!location) return;
-  const current = location.combat.groups.get(groupId)?.name ?? "";
-  const name = await promptForText("TACTICAL_INITIATIVE.Group.Rename", current);
-  if (name !== null && name.length > 0) await renameGroup(location.combat, groupId, name);
+  const location = id ? findCombatant(id) : null;
+  if (location && groupId) await renameGroupInteractive(location.combat, groupId);
 }
 async function recolorClickedGroup(target) {
   const id = combatantIdFromTarget(target);
   const groupId = clickedGroupId(target);
-  if (!id || !groupId) return;
-  const location = findCombatant(id);
-  if (!location) return;
-  const group = location.combat.groups.get(groupId);
-  const current = group ? groupColor(group) : DEFAULT_GROUP_COLOR;
-  const color = await promptForColor(current);
-  if (color !== null && color.length > 0) await recolorGroup(location.combat, groupId, color);
+  const location = id ? findCombatant(id) : null;
+  if (location && groupId) await recolorGroupInteractive(location.combat, groupId);
 }
 async function disbandClickedGroup(target) {
   const id = combatantIdFromTarget(target);
@@ -1415,14 +1433,6 @@ async function disbandClickedGroup(target) {
 }
 function pushGroupOptions(options) {
   const isGM = () => game.user?.isGM === true;
-  options.push({
-    name: game.i18n.localize("TACTICAL_INITIATIVE.Group.AddTo"),
-    icon: `<i class="fas fa-object-group"></i>`,
-    condition: () => isGM(),
-    callback: (target) => {
-      void addSelectionToNewGroup(target);
-    }
-  });
   options.push({
     name: game.i18n.localize("TACTICAL_INITIATIVE.HUD.Open"),
     icon: `<i class="fas fa-gauge-high"></i>`,
@@ -1436,7 +1446,7 @@ function pushGroupOptions(options) {
     icon: `<i class="fas fa-object-ungroup"></i>`,
     condition: (target) => isGM() && isGrouped(target),
     callback: (target) => {
-      void removeClickedFromGroup(target);
+      void runSafe("remove from group", () => removeClickedFromGroup(target));
     }
   });
   options.push({
@@ -1444,7 +1454,7 @@ function pushGroupOptions(options) {
     icon: `<i class="fas fa-pen"></i>`,
     condition: (target) => isGM() && isGrouped(target),
     callback: (target) => {
-      void renameClickedGroup(target);
+      void runSafe("rename group", () => renameClickedGroup(target));
     }
   });
   options.push({
@@ -1452,7 +1462,7 @@ function pushGroupOptions(options) {
     icon: `<i class="fas fa-palette"></i>`,
     condition: (target) => isGM() && isGrouped(target),
     callback: (target) => {
-      void recolorClickedGroup(target);
+      void runSafe("recolor group", () => recolorClickedGroup(target));
     }
   });
   options.push({
@@ -1460,7 +1470,7 @@ function pushGroupOptions(options) {
     icon: `<i class="fas fa-users-slash"></i>`,
     condition: (target) => isGM() && isGrouped(target),
     callback: (target) => {
-      void disbandClickedGroup(target);
+      void runSafe("disband group", () => disbandClickedGroup(target));
     }
   });
 }
@@ -1492,31 +1502,6 @@ function tryPatchTracker() {
     return false;
   }
 }
-function decorateTrackerGroups(root) {
-  try {
-    const combat = game.combats?.active ?? null;
-    if (!combat) return;
-    const rows = root.querySelectorAll(".combatant[data-combatant-id]");
-    rows.forEach((row) => {
-      const id = row.dataset["combatantId"];
-      if (typeof id !== "string" || id.length === 0) return;
-      const combatant = combat.combatants.get(id);
-      const groupId = combatant ? groupIdOf(combatant) : null;
-      if (!groupId || groupId.length === 0) return;
-      const group = combat.groups.get(groupId);
-      if (!group) return;
-      if (row.querySelector(`.${MODULE_ID}-group-tag`)) return;
-      const tag = document.createElement("span");
-      tag.className = `${MODULE_ID}-group-tag`;
-      tag.textContent = group.name;
-      tag.title = group.name;
-      tag.style.backgroundColor = groupColor(group);
-      const anchor = row.querySelector(".token-name, .combatant-name, .name") ?? row;
-      anchor.appendChild(tag);
-    });
-  } catch {
-  }
-}
 function registerGroupUI() {
   Hooks.once("ready", () => {
     if (tryPatchTracker()) return;
@@ -1524,9 +1509,313 @@ function registerGroupUI() {
       pushGroupOptions(options);
     });
   });
-  Hooks.on("renderCombatTracker", (_app, html) => {
-    const root = resolveElement(html);
-    if (root) decorateTrackerGroups(root);
+}
+
+// src/grouping-service.ts
+var GroupingService = class {
+  /**
+   * @param port - The Foundry seam.
+   */
+  constructor(port) {
+    this.port = port;
+  }
+  /**
+   * Group the given tokens: add missing ones to combat, then create, join, or
+   * leave a group per {@link resolveGroupChoice} and the GM's dialog answer.
+   *
+   * @param tokenIds - Selected token ids (duplicates allowed).
+   */
+  async groupSelected(tokenIds) {
+    const unique = [...new Set(tokenIds)];
+    if (unique.length === 0) {
+      this.port.warn("NothingSelected");
+      return;
+    }
+    const combatId = await this.port.resolveCombat();
+    if (combatId === null) {
+      this.port.warn("NoScene");
+      return;
+    }
+    const before = this.port.listCombatants(combatId);
+    const byToken = /* @__PURE__ */ new Map();
+    for (const combatant of before) {
+      if (combatant.bossEndSlot || combatant.tokenId === null) continue;
+      if (!unique.includes(combatant.tokenId) || byToken.has(combatant.tokenId)) continue;
+      byToken.set(combatant.tokenId, combatant);
+    }
+    const inCombat = [...byToken.values()];
+    const newTokens = unique.filter((tokenId) => !byToken.has(tokenId));
+    const selected = [
+      ...inCombat.map((c) => ({ combatantId: c.id, groupId: c.groupId })),
+      ...newTokens.map(() => ({ combatantId: null, groupId: null }))
+    ];
+    const groups = this.port.listGroups(combatId);
+    const choice = resolveGroupChoice(selected, groups);
+    if (choice.kind === "none") return;
+    const base = majorityName(this.port.tokenActorNames(unique)) ?? this.port.fallbackGroupName();
+    const defaultName = nextGroupName(
+      groups.map((group) => group.name),
+      base
+    );
+    const result = choice.kind === "create" ? { action: "new", name: defaultName } : await this.port.prompt({ options: choice.options, offerRemove: choice.offerRemove, defaultName });
+    if (result === null) return;
+    if (result.action === "remove") {
+      await this.leave(
+        combatId,
+        inCombat.filter((c) => c.groupId !== null)
+      );
+      return;
+    }
+    const targetId = result.action === "join" ? result.groupId : await this.port.createGroup(combatId, result.name.trim() || defaultName);
+    await this.join(combatId, before, inCombat, newTokens, targetId);
+  }
+  /** Put selected combatants and new tokens into `targetId`, then settle initiative. */
+  async join(combatId, before, inCombat, newTokens, targetId) {
+    const started = this.port.isStarted(combatId);
+    const shared = started ? before.find((c) => c.groupId === targetId && c.initiative !== null)?.initiative ?? null : null;
+    const moving = inCombat.filter((c) => c.groupId !== targetId).map((c) => c.id);
+    if (moving.length > 0) {
+      await this.port.assign(combatId, moving, targetId, shared);
+      await this.port.tearDownBoss(combatId, moving);
+    }
+    if (newTokens.length > 0) await this.port.createCombatants(combatId, newTokens, targetId, shared);
+    if (started && shared === null && (moving.length > 0 || newTokens.length > 0)) {
+      const value = await this.port.rollGroupInitiative(combatId, targetId);
+      if (value !== null) {
+        const members = this.port.listCombatants(combatId).filter((c) => c.groupId === targetId).map((c) => c.id);
+        await this.port.setInitiative(combatId, members, value);
+      }
+    }
+    await this.sweep(
+      combatId,
+      inCombat.map((c) => c.groupId)
+    );
+  }
+  /** Remove combatants from their groups and restore their boss slots. */
+  async leave(combatId, refs) {
+    if (refs.length === 0) return;
+    const ids = refs.map((ref) => ref.id);
+    await this.port.unassign(combatId, ids);
+    await this.port.reconcileBoss(combatId, ids);
+    await this.sweep(
+      combatId,
+      refs.map((ref) => ref.groupId)
+    );
+  }
+  /** Delete any candidate group that no longer has members. */
+  async sweep(combatId, candidates) {
+    const used = new Set(this.port.listCombatants(combatId).map((c) => c.groupId));
+    for (const groupId of new Set(candidates)) {
+      if (groupId !== null && !used.has(groupId)) await this.port.deleteGroup(combatId, groupId);
+    }
+  }
+};
+
+// src/adapter/grouping.ts
+function combatClass() {
+  return CONFIG.Combat.documentClass;
+}
+function escapeHtml2(value) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function readName(button) {
+  const field = button.form?.elements.namedItem("name");
+  return field instanceof HTMLInputElement ? field.value : "";
+}
+var FoundryGroupingPort = class {
+  /** Resolve a combat by id or throw (ids come from resolveCombat). */
+  combat(combatId) {
+    const combat = game.combats?.get(combatId);
+    if (!combat) throw new Error(`combat ${combatId} not found`);
+    return combat;
+  }
+  async resolveCombat() {
+    const sceneId = canvas.scene?.id ?? null;
+    if (sceneId === null) return null;
+    const viewed = game.combat ?? null;
+    let combat = viewed && (viewed.scene === null || viewed.scene.id === sceneId) ? viewed : null;
+    combat ??= game.combats?.find((c) => c.scene?.id === sceneId) ?? null;
+    combat ??= await combatClass().create({ scene: sceneId, active: true });
+    if (!combat.active) await combat.activate();
+    return combat.id;
+  }
+  listCombatants(combatId) {
+    return this.combat(combatId).combatants.contents.map((c) => ({
+      id: c.id,
+      tokenId: c.tokenId,
+      groupId: groupIdOf(c),
+      initiative: c.initiative,
+      bossEndSlot: c.getFlag(MODULE_ID, FLAGS.BOSS_SLOT) === "end"
+    }));
+  }
+  listGroups(combatId) {
+    return this.combat(combatId).groups.contents.map((g) => ({ id: g.id, name: g.name, color: groupColor(g) }));
+  }
+  isStarted(combatId) {
+    return this.combat(combatId).started;
+  }
+  tokenActorNames(tokenIds) {
+    return tokenIds.map((id) => {
+      const doc = canvas.tokens?.get(id)?.document;
+      return doc?.actor?.name ?? doc?.name ?? "";
+    });
+  }
+  fallbackGroupName() {
+    return game.i18n.localize("TACTICAL_INITIATIVE.Group.FallbackName");
+  }
+  async createGroup(combatId, name) {
+    const created = await this.combat(combatId).createEmbeddedDocuments("CombatantGroup", [
+      { name, flags: { [MODULE_ID]: { [FLAGS.GROUP_COLOR]: DEFAULT_GROUP_COLOR } } }
+    ]);
+    const group = created[0];
+    if (!group) throw new Error("CombatantGroup was not created");
+    return group.id;
+  }
+  async createCombatants(combatId, tokenIds, groupId, initiative) {
+    const sceneId = canvas.scene?.id ?? null;
+    const data = tokenIds.flatMap((tokenId) => {
+      const doc = canvas.tokens?.get(tokenId)?.document;
+      if (!doc) return [];
+      return [
+        {
+          tokenId,
+          sceneId,
+          actorId: doc.actorId,
+          hidden: doc.hidden === true,
+          group: groupId,
+          ...initiative !== null ? { initiative } : {}
+        }
+      ];
+    });
+    if (data.length === 0) return [];
+    const created = await this.combat(combatId).createEmbeddedDocuments("Combatant", data);
+    return created.map((c) => c.id);
+  }
+  async assign(combatId, ids, groupId, initiative) {
+    await this.combat(combatId).updateEmbeddedDocuments(
+      "Combatant",
+      ids.map((id) => ({ _id: id, group: groupId, ...initiative !== null ? { initiative } : {} }))
+    );
+  }
+  async unassign(combatId, ids) {
+    await this.combat(combatId).updateEmbeddedDocuments(
+      "Combatant",
+      ids.map((id) => ({ _id: id, group: null }))
+    );
+  }
+  async deleteGroup(combatId, groupId) {
+    const combat = this.combat(combatId);
+    if (combat.groups.get(groupId)) await combat.deleteEmbeddedDocuments("CombatantGroup", [groupId]);
+  }
+  async rollGroupInitiative(combatId, groupId) {
+    const combat = this.combat(combatId);
+    const hasMember = combat.combatants.contents.some((c) => groupIdOf(c) === groupId);
+    if (!hasMember) return null;
+    return new FoundryAdapter(combat, getPlayerTimeoutMs()).rollGroupInitiative(groupId);
+  }
+  async setInitiative(combatId, ids, value) {
+    await this.combat(combatId).updateEmbeddedDocuments(
+      "Combatant",
+      ids.map((id) => ({ _id: id, initiative: value }))
+    );
+  }
+  async tearDownBoss(combatId, ids) {
+    const combat = this.combat(combatId);
+    for (const id of ids) {
+      const combatant = combat.combatants.get(id);
+      if (combatant) await tearDownBossSlots(combatant, combat);
+    }
+  }
+  async reconcileBoss(combatId, ids) {
+    const combat = this.combat(combatId);
+    for (const id of ids) {
+      const combatant = combat.combatants.get(id);
+      if (combatant) await reconcileBossOnRetag(combatant, combat);
+    }
+  }
+  async prompt(request) {
+    const legend = request.options.map(
+      (g) => `<li><span style="display:inline-block;width:0.8em;height:0.8em;border-radius:50%;background:${escapeHtml2(
+        g.color ?? DEFAULT_GROUP_COLOR
+      )}"></span> ${escapeHtml2(g.name)}</li>`
+    ).join("");
+    const content = `<label>${escapeHtml2(game.i18n.localize("TACTICAL_INITIATIVE.Grouping.NameLabel"))} <input type="text" name="name" value="${escapeHtml2(request.defaultName)}" autofocus></label><p>${escapeHtml2(game.i18n.localize("TACTICAL_INITIATIVE.Grouping.Existing"))}</p><ul>${legend}</ul>`;
+    const buttons = [
+      {
+        action: "new",
+        label: game.i18n.localize("TACTICAL_INITIATIVE.Grouping.NewGroup"),
+        default: true,
+        callback: (_event, button) => ({ action: "new", name: readName(button) })
+      },
+      ...request.options.map(
+        (g) => ({
+          action: `join-${g.id}`,
+          label: game.i18n.format("TACTICAL_INITIATIVE.Grouping.Join", { name: g.name }),
+          callback: () => ({ action: "join", groupId: g.id })
+        })
+      )
+    ];
+    if (request.offerRemove) {
+      buttons.push({
+        action: "remove",
+        label: game.i18n.localize("TACTICAL_INITIATIVE.Grouping.RemoveFromGroup"),
+        callback: () => ({ action: "remove" })
+      });
+    }
+    const result = await foundry.applications.api.DialogV2.wait({
+      window: { title: game.i18n.localize("TACTICAL_INITIATIVE.Grouping.DialogTitle") },
+      content,
+      buttons,
+      rejectClose: false,
+      modal: true
+    });
+    return result && typeof result === "object" && "action" in result ? result : null;
+  }
+  warn(key) {
+    ui.notifications?.warn(game.i18n.localize(`TACTICAL_INITIATIVE.Grouping.${key}`));
+  }
+};
+
+// src/adapter/grouping-ui.ts
+async function groupSelectedTokens(extraTokenId) {
+  if (game.user?.isGM !== true) return;
+  const ids = (canvas.tokens?.controlled ?? []).map((token) => token.id);
+  if (extraTokenId) ids.push(extraTokenId);
+  await new GroupingService(new FoundryGroupingPort()).groupSelected(ids);
+}
+function registerGroupingKeybinding() {
+  game.keybindings.register(MODULE_ID, KEYBINDINGS.GROUP_SELECTED, {
+    name: "TACTICAL_INITIATIVE.Grouping.KeyName",
+    hint: "TACTICAL_INITIATIVE.Grouping.KeyHint",
+    editable: [{ key: "KeyG" }],
+    restricted: true,
+    onDown: () => {
+      void runSafe("group selected", () => groupSelectedTokens());
+      return true;
+    }
+  });
+}
+function registerTokenHudButton() {
+  Hooks.on("renderTokenHUD", (app, html) => {
+    if (game.user?.isGM !== true) return;
+    const root = html instanceof HTMLElement ? html : html?.[0];
+    if (!(root instanceof HTMLElement)) return;
+    const column = root.querySelector(".col.left");
+    if (!column || column.querySelector(`.${MODULE_ID}-group-btn`)) return;
+    const tokenId = app.object?.id;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `control-icon ${MODULE_ID}-group-btn`;
+    button.title = game.i18n.localize("TACTICAL_INITIATIVE.Grouping.HudButton");
+    const icon = document.createElement("i");
+    icon.className = "fas fa-object-group";
+    button.appendChild(icon);
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void runSafe("group selected", () => groupSelectedTokens(tokenId));
+    });
+    column.appendChild(button);
   });
 }
 
@@ -1740,21 +2029,6 @@ function injectSheetControl(app, html) {
 }
 function capitalize(tag) {
   return `${tag.charAt(0).toUpperCase()}${tag.slice(1)}`;
-}
-
-// src/ui/run-safe.ts
-var defaultReport = (label, error) => {
-  console.error(`tactical-initiative | ${label}`, error);
-  const notes = globalThis.ui?.notifications;
-  notes?.error?.(`Tactical Initiative: ${label} failed; see console (F12).`);
-};
-function runSafe(label, fn, report = defaultReport) {
-  return Promise.resolve().then(fn).then(
-    () => void 0,
-    (error) => {
-      report(label, error);
-    }
-  );
 }
 
 // src/ui/menu.ts
@@ -1999,6 +2273,8 @@ Hooks.once("init", () => {
   registerActorDirectoryContextMenu();
   registerSheetTagControl();
   registerGroupUI();
+  registerGroupingKeybinding();
+  registerTokenHudButton();
   registerTopBar();
   console.log(`${MODULE_ID} | initialized`);
 });
