@@ -247,6 +247,7 @@ interface ChatMessageStatic {
 interface FoundryNotifications {
   warn(message: string): void;
   info(message: string): void;
+  error(message: string): void;
 }
 
 /**

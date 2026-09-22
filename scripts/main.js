@@ -1742,6 +1742,60 @@ function capitalize(tag) {
   return `${tag.charAt(0).toUpperCase()}${tag.slice(1)}`;
 }
 
+// src/ui/run-safe.ts
+var defaultReport = (label, error) => {
+  console.error(`tactical-initiative | ${label}`, error);
+  const notes = globalThis.ui?.notifications;
+  notes?.error?.(`Tactical Initiative: ${label} failed; see console (F12).`);
+};
+function runSafe(label, fn, report = defaultReport) {
+  return Promise.resolve().then(fn).then(
+    () => void 0,
+    (error) => {
+      report(label, error);
+    }
+  );
+}
+
+// src/ui/menu.ts
+var outsideListeners = /* @__PURE__ */ new Map();
+function closeMenu(doc, id) {
+  const listener = outsideListeners.get(id);
+  if (listener) {
+    doc.removeEventListener("pointerdown", listener, true);
+    outsideListeners.delete(id);
+  }
+  doc.getElementById(id)?.remove();
+}
+function openMenu(doc, id, className, items, x, y, report) {
+  closeMenu(doc, id);
+  if (items.length === 0) return null;
+  const menu = doc.createElement("nav");
+  menu.id = id;
+  menu.className = className;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  for (const entry of items) {
+    const button = doc.createElement("button");
+    button.type = "button";
+    button.className = `${className}-item`;
+    button.textContent = entry.label;
+    button.addEventListener("click", () => {
+      closeMenu(doc, id);
+      void runSafe(`menu:${entry.label}`, entry.run, report);
+    });
+    menu.appendChild(button);
+  }
+  const outside = (event) => {
+    if (event.target instanceof Node && menu.contains(event.target)) return;
+    closeMenu(doc, id);
+  };
+  outsideListeners.set(id, outside);
+  doc.addEventListener("pointerdown", outside, true);
+  doc.body.appendChild(menu);
+  return menu;
+}
+
 // src/adapter/top-bar.ts
 var CONTAINER_ID = `${MODULE_ID}-top-bar`;
 function enabled() {
@@ -1799,44 +1853,20 @@ function focusToken(combatantId) {
 function openSheet(combatantId) {
   findCombatant(combatantId)?.combatant.actor?.sheet?.render(true);
 }
-function closeMenu() {
-  document.getElementById(`${MODULE_ID}-tb-menu`)?.remove();
-}
-function openMenu(rowEl, x, y) {
-  closeMenu();
+var MENU_ID = `${MODULE_ID}-tb-menu`;
+var MENU_CLASS = `${MODULE_ID}-tb-menu`;
+function openCombatantMenu(rowEl, x, y) {
   const entries = [];
   pushTagOptions(entries);
   pushGroupOptions(entries);
-  const visible = entries.filter((entry) => {
+  const items = entries.filter((entry) => {
     try {
       return entry.condition(rowEl);
     } catch {
       return false;
     }
-  });
-  if (visible.length === 0) return;
-  const menu = document.createElement("nav");
-  menu.id = `${MODULE_ID}-tb-menu`;
-  menu.className = `${MODULE_ID}-tb-menu`;
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
-  for (const entry of visible) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = `${MODULE_ID}-tb-menu-item`;
-    item.textContent = entry.name;
-    item.addEventListener("click", () => {
-      closeMenu();
-      try {
-        entry.callback(rowEl);
-      } catch (error) {
-        console.error(`${MODULE_ID} | top-bar menu`, error);
-      }
-    });
-    menu.appendChild(item);
-  }
-  document.body.appendChild(menu);
-  window.addEventListener("pointerdown", closeMenu, { once: true });
+  }).map((entry) => ({ label: entry.name, run: () => entry.callback(rowEl) }));
+  openMenu(document, MENU_ID, MENU_CLASS, items, x, y);
 }
 function renderRow(row) {
   const li = document.createElement("div");
@@ -1873,7 +1903,7 @@ function renderRow(row) {
     });
     li.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      openMenu(li, event.clientX, event.clientY);
+      openCombatantMenu(li, event.clientX, event.clientY);
     });
     li.title = row.name;
   } else {
@@ -1909,7 +1939,7 @@ function renderControls(combat) {
     el.appendChild(glyph);
     el.title = game.i18n.localize(key);
     el.addEventListener("click", () => {
-      if (isActiveGM()) void run();
+      if (isActiveGM()) void runSafe(`turn:${action}`, run);
     });
     bar.appendChild(el);
   };
@@ -1938,7 +1968,21 @@ function render() {
 }
 function registerTopBar() {
   Hooks.once("ready", render);
-  for (const hook of ["updateCombat", "updateCombatant", "createCombatant", "deleteCombatant", "deleteCombat"]) {
+  const redrawOn = [
+    "createCombat",
+    "updateCombat",
+    "deleteCombat",
+    "createCombatant",
+    "updateCombatant",
+    "deleteCombatant",
+    "createCombatantGroup",
+    "updateCombatantGroup",
+    "deleteCombatantGroup",
+    "updateActor",
+    "createToken",
+    "deleteToken"
+  ];
+  for (const hook of redrawOn) {
     Hooks.on(hook, () => {
       render();
     });

@@ -21,6 +21,8 @@ import { isActiveGM } from "./hooks";
 import { findCombatant } from "./lookup";
 import { pushTagOptions } from "./tagging-ui";
 import { readCombatantTag } from "./tags";
+import { openMenu as openUiMenu, type MenuItem } from "../ui/menu";
+import { runSafe } from "../ui/run-safe";
 
 /** The id of the bar container element. */
 const CONTAINER_ID = `${MODULE_ID}-top-bar`;
@@ -102,47 +104,31 @@ interface MenuEntry {
   callback: (target: unknown) => void;
 }
 
-/** Remove any open bar context menu. */
-function closeMenu(): void {
-  document.getElementById(`${MODULE_ID}-tb-menu`)?.remove();
-}
+/** Menu element id and class for the bar's context menu. */
+const MENU_ID = `${MODULE_ID}-tb-menu`;
+const MENU_CLASS = `${MODULE_ID}-tb-menu`;
 
-/** Open a context menu at (x, y) for the given row element, reusing the sidebar builders. */
-function openMenu(rowEl: HTMLElement, x: number, y: number): void {
-  closeMenu();
+/**
+ * Open the combatant-row context menu, reusing the sidebar tag/group builders.
+ *
+ * @param rowEl - The combatant row element (carries `data-combatant-id`).
+ * @param x - Viewport x.
+ * @param y - Viewport y.
+ */
+function openCombatantMenu(rowEl: HTMLElement, x: number, y: number): void {
   const entries: MenuEntry[] = [];
   pushTagOptions(entries);
   pushGroupOptions(entries);
-  const visible = entries.filter((entry) => {
-    try {
-      return entry.condition(rowEl);
-    } catch {
-      return false;
-    }
-  });
-  if (visible.length === 0) return;
-  const menu = document.createElement("nav");
-  menu.id = `${MODULE_ID}-tb-menu`;
-  menu.className = `${MODULE_ID}-tb-menu`;
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
-  for (const entry of visible) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = `${MODULE_ID}-tb-menu-item`;
-    item.textContent = entry.name;
-    item.addEventListener("click", () => {
-      closeMenu();
+  const items: MenuItem[] = entries
+    .filter((entry) => {
       try {
-        entry.callback(rowEl);
-      } catch (error) {
-        console.error(`${MODULE_ID} | top-bar menu`, error);
+        return entry.condition(rowEl);
+      } catch {
+        return false;
       }
-    });
-    menu.appendChild(item);
-  }
-  document.body.appendChild(menu);
-  window.addEventListener("pointerdown", closeMenu, { once: true });
+    })
+    .map((entry) => ({ label: entry.name, run: () => entry.callback(rowEl) }));
+  openUiMenu(document, MENU_ID, MENU_CLASS, items, x, y);
 }
 
 /** Build one combatant or group row element (interactions added in Task 3). */
@@ -181,7 +167,7 @@ function renderRow(row: TrackerRow): HTMLElement {
     });
     li.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      openMenu(li, event.clientX, event.clientY);
+      openCombatantMenu(li, event.clientX, event.clientY);
     });
     li.title = row.name;
   } else {
@@ -219,7 +205,7 @@ function renderControls(combat: FoundryCombat): HTMLElement {
     el.appendChild(glyph);
     el.title = game.i18n.localize(key);
     el.addEventListener("click", () => {
-      if (isActiveGM()) void run();
+      if (isActiveGM()) void runSafe(`turn:${action}`, run);
     });
     bar.appendChild(el);
   };
@@ -256,7 +242,21 @@ function render(): void {
  */
 export function registerTopBar(): void {
   Hooks.once("ready", render);
-  for (const hook of ["updateCombat", "updateCombatant", "createCombatant", "deleteCombatant", "deleteCombat"]) {
+  const redrawOn = [
+    "createCombat",
+    "updateCombat",
+    "deleteCombat",
+    "createCombatant",
+    "updateCombatant",
+    "deleteCombatant",
+    "createCombatantGroup",
+    "updateCombatantGroup",
+    "deleteCombatantGroup",
+    "updateActor",
+    "createToken",
+    "deleteToken"
+  ];
+  for (const hook of redrawOn) {
     Hooks.on(hook, () => {
       render();
     });
