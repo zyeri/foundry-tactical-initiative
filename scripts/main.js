@@ -818,16 +818,31 @@ async function disbandGroup(combat, groupId) {
       memberIds.map((id) => ({ _id: id, group: null }))
     );
   }
+  for (const id of memberIds) {
+    const combatant = combat.combatants.get(id);
+    if (combatant) await reconcileBossOnRetag(combatant, combat);
+  }
   await combat.deleteEmbeddedDocuments("CombatantGroup", [groupId]);
 }
 function groupColor(group) {
   const color = group.getFlag(MODULE_ID, FLAGS.GROUP_COLOR);
   return typeof color === "string" ? color : DEFAULT_GROUP_COLOR;
 }
-async function sweepEmptyGroups(combat) {
-  const used = new Set(combat.combatants.contents.map((c) => groupIdOf(c)));
-  const empty = combat.groups.contents.filter((group) => !used.has(group.id)).map((group) => group.id);
-  if (empty.length > 0) await combat.deleteEmbeddedDocuments("CombatantGroup", empty);
+var sweepInFlight = /* @__PURE__ */ new Set();
+async function sweepEmptyGroup(combat, groupId) {
+  if (groupId === null) return;
+  if (!combat.groups.get(groupId)) return;
+  const key = `${combat.id}:${groupId}`;
+  if (sweepInFlight.has(key)) return;
+  sweepInFlight.add(key);
+  try {
+    const stillHasMembers = combat.combatants.contents.some((c) => groupIdOf(c) === groupId);
+    if (stillHasMembers) return;
+    if (!combat.groups.get(groupId)) return;
+    await combat.deleteEmbeddedDocuments("CombatantGroup", [groupId]);
+  } finally {
+    sweepInFlight.delete(key);
+  }
 }
 
 // src/adapter/hooks.ts
@@ -848,7 +863,7 @@ async function rollRoundOnce(combat) {
   if (lastRolledRound.get(combat.id) === combat.round) return;
   lastRolledRound.set(combat.id, combat.round);
   await serviceFor(combat).rollForCombat(combat.id);
-  await combat.update({ turn: 0 });
+  await combat.update({ turn: 0 }, { [MODULE_ID]: { resetTurn: true } });
 }
 async function removeAllTempEffects(combat) {
   const seen = /* @__PURE__ */ new Set();
@@ -895,7 +910,7 @@ function registerHooks() {
     if (!combat) return;
     guard("deleteCombatant", async () => {
       await cleanupBossPairOnDelete(combatant, combat);
-      await sweepEmptyGroups(combat);
+      await sweepEmptyGroup(combat, groupIdOf(combatant));
     });
   });
   Hooks.on("deleteCombat", (combat) => {
@@ -1750,7 +1765,7 @@ var FoundryGroupingPort = class {
       ...request.options.map(
         (g) => ({
           action: `join-${g.id}`,
-          label: game.i18n.format("TACTICAL_INITIATIVE.Grouping.Join", { name: g.name }),
+          label: game.i18n.format("TACTICAL_INITIATIVE.Grouping.Join", { name: escapeHtml2(g.name) }),
           callback: () => ({ action: "join", groupId: g.id })
         })
       )
@@ -1822,6 +1837,7 @@ function registerTokenHudButton() {
 // src/logic/turns.ts
 function adjustTurn(turns, from, to, direction, skipDefeated) {
   if (from === null || to < 0 || to >= turns.length) return { kind: "keep" };
+  if (to === from) return { kind: "keep" };
   if (direction === 1) {
     const groupId2 = turns[from]?.groupId ?? null;
     if (groupId2 === null) return { kind: "keep" };
@@ -1878,8 +1894,19 @@ function registerGroupTurns() {
     (combat, changes, options) => {
       if (typeof changes.turn !== "number") return;
       if (typeof changes.round === "number" && changes.round > combat.round) return;
+      const marker = options[MODULE_ID];
+      if (marker && typeof marker === "object" && marker.resetTurn === true) return;
       const from = combat.turn;
-      const direction = options.direction === -1 || options.direction === 1 ? options.direction : changes.turn < (from ?? -1) ? -1 : 1;
+      let direction;
+      if (options.direction === -1 || options.direction === 1) {
+        direction = options.direction;
+      } else if (changes.turn === (from ?? -1) + 1) {
+        direction = 1;
+      } else if (changes.turn === (from ?? -1) - 1) {
+        direction = -1;
+      } else {
+        return;
+      }
       const turns = combat.turns.map((c) => ({
         id: c.id,
         groupId: groupIdOf(c),
@@ -2386,8 +2413,29 @@ function render() {
     console.error(`${MODULE_ID} | top-bar render`, error);
   }
 }
+function closeAllPopovers() {
+  if (expandedGroups.size === 0) return;
+  expandedGroups.clear();
+  render();
+}
+function registerPopoverDismissal() {
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (expandedGroups.size === 0) return;
+      const target = event.target instanceof Node ? event.target : null;
+      if (target && target.closest?.(`.${POPOVER_CLASS}, [data-group-id]`)) return;
+      closeAllPopovers();
+    },
+    true
+  );
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeAllPopovers();
+  });
+}
 function registerTopBar() {
   Hooks.once("ready", render);
+  registerPopoverDismissal();
   const redrawOn = [
     "createCombat",
     "updateCombat",
