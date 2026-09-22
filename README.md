@@ -269,8 +269,9 @@ Behavior checks:
    the group's initiative. Grouping an already-slotted boss now tears down its start/end
    double-turn entries immediately (cascade-safe); its initiative settles to the group's
    shared value on the next reroll.
-8. **Colored renameable tag.** Confirm each grouped row shows the colored group tag; **rename**
-   and **recolor** from the row's context menu update it on the next render.
+8. **Superseded in v1.6.0 (sidebar group rows are rendered by dnd5e).** **Colored renameable
+   tag.** Confirm each grouped row shows the colored group tag; **rename** and **recolor**
+   from the row's context menu update it on the next render.
 9. **Disband restores.** **Disband group** (or remove the last member). Confirm the members
    return to individual tag behavior on the next reroll.
 
@@ -325,9 +326,11 @@ v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
    combat is created and activated; one group "Goblin" holds all three; the top bar shows
    one stacked cell `x3`.
 2. **HUD button.** Right-click a wolf token, click the group icon in the HUD's left column.
-   A dialog offers a name (default "Wolf"), New group, and Join Goblin.
+   A dialog offers a name (default "Wolf"), New group, and Join Goblin. A group named
+   `<b>x</b>` shows literally (not bolded) in the Join button.
 3. **Join mid-fight.** Start combat, then G a new goblin token and choose Join Goblin. It
-   enters the combat with the group's initiative; no tag prompt; no extra turn.
+   enters the combat with the group's initiative; no tag prompt; no extra turn. Confirm
+   every member shows the same initiative (no split from the createCombatant hook).
 4. **Boss in a selection.** Group a Boss-tagged token: no stray end slot appears. Remove it
    (HUD button -> Remove from group): its start/end double turn returns.
 5. **Spot removal empties a group.** Remove the last member of a group: the group
@@ -341,6 +344,9 @@ v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
    an HP change; clicking a member pans to it. Right-click: Rename, Recolor, Open HUD,
    Disband all work. A defeated member dims in the list and the badge reads `x2/3`.
 10. **Menus fire.** Right-click a combatant cell -> Tactical: tag as Boss applies the tag.
+11. **A group that rolls highest keeps its turn at round start** (and a combat that is a
+    single group stays on round 1 until Next Turn).
+12. **Roll All mid-combat** while a group member is current does not advance the turn.
 
 ## Development
 
