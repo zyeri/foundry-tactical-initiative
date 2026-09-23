@@ -187,6 +187,7 @@ interface FoundryUsers extends FoundryCollection<FoundryUser> {
 interface FoundrySettings {
   register(namespace: string, key: string, data: object): void;
   get(namespace: string, key: string): unknown;
+  set(namespace: string, key: string, value: unknown): Promise<unknown>;
 }
 
 /** Foundry's i18n helper (subset). */

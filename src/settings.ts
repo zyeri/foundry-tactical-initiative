@@ -3,6 +3,7 @@
  */
 
 import { DEFAULT_KILL_WINDOW_SECONDS, MODULE_ID, SETTINGS } from "./constants";
+import { BAR_DEFAULT, clampBarSize } from "./logic/bar-size";
 
 /**
  * Register all module settings. Call once from the `init` hook.
@@ -54,6 +55,13 @@ export function registerSettings(): void {
     },
     default: "bar"
   });
+  game.settings.register(MODULE_ID, SETTINGS.TOP_BAR_SIZE, {
+    name: "TACTICAL_INITIATIVE.Settings.TopBarSize.Name",
+    scope: "user",
+    config: false,
+    type: Number,
+    default: BAR_DEFAULT
+  });
 }
 
 /**
@@ -87,4 +95,14 @@ export function getKillWindowMs(): number {
   const seconds =
     typeof raw === "number" && Number.isFinite(raw) ? raw : DEFAULT_KILL_WINDOW_SECONDS;
   return Math.max(5, seconds) * 1000;
+}
+
+/**
+ * The user's top-bar portrait size, clamped to the allowed range.
+ *
+ * @returns Size in px (44 when unset or invalid).
+ */
+export function getTopBarSize(): number {
+  const raw = game.settings.get(MODULE_ID, SETTINGS.TOP_BAR_SIZE);
+  return clampBarSize(typeof raw === "number" ? raw : BAR_DEFAULT);
 }

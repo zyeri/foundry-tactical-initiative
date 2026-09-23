@@ -7,6 +7,7 @@
 
 import { MODULE_ID, SETTINGS } from "../constants";
 import { groupIdOf } from "../logic/group";
+import { BAR_DEFAULT, BAR_MAX, BAR_MIN, clampBarSize } from "../logic/bar-size";
 import {
   buildTrackerView,
   type TrackerCombatant,
@@ -19,8 +20,10 @@ import { pushGroupOptions, recolorGroupInteractive, renameGroupInteractive } fro
 import { disbandGroup, groupColor } from "./groups";
 import { isActiveGM } from "./hooks";
 import { findCombatant } from "./lookup";
+import { getTopBarSize } from "../settings";
 import { pushTagOptions } from "./tagging-ui";
 import { readCombatantTag } from "./tags";
+import { attachGrip } from "../ui/grip";
 import { openMenu as openUiMenu, type MenuItem } from "../ui/menu";
 import { runSafe } from "../ui/run-safe";
 
@@ -74,15 +77,55 @@ function toInput(combat: FoundryCombat): TrackerInput {
   };
 }
 
-/** Get or create the bar container under #ui-top (falling back to body). */
-function container(): HTMLElement {
+/** Class of the scrolling strip that render() rebuilds. */
+const STRIP_CLASS = `${MODULE_ID}-tb-strip`;
+
+/** The size currently applied to the bar, px. */
+let barSize = BAR_DEFAULT;
+
+/** Apply a portrait size to the bar wrapper. */
+function applySize(bar: HTMLElement, px: number): void {
+  bar.style.setProperty("--ti-portrait", `${px}px`);
+}
+
+/**
+ * Get or create the bar: a persistent wrapper under #ui-top (falling back to
+ * body) holding a strip that render() rebuilds and a persistent resize grip.
+ *
+ * @returns The wrapper and its strip.
+ */
+function container(): { bar: HTMLElement; strip: HTMLElement } {
   const existing = document.getElementById(CONTAINER_ID);
-  if (existing) return existing;
-  const element = document.createElement("div");
-  element.id = CONTAINER_ID;
-  element.className = `${MODULE_ID}-top-bar`;
-  (document.getElementById("ui-top") ?? document.body).appendChild(element);
-  return element;
+  const existingStrip = existing?.querySelector<HTMLElement>(`.${STRIP_CLASS}`);
+  if (existing && existingStrip) return { bar: existing, strip: existingStrip };
+  const bar = document.createElement("div");
+  bar.id = CONTAINER_ID;
+  bar.className = `${MODULE_ID}-top-bar`;
+  const strip = document.createElement("div");
+  strip.className = STRIP_CLASS;
+  const grip = document.createElement("div");
+  grip.className = `${MODULE_ID}-tb-grip`;
+  grip.title = game.i18n.localize("TACTICAL_INITIATIVE.Tracker.ResizeGrip");
+  bar.append(strip, grip);
+  barSize = getTopBarSize();
+  applySize(bar, barSize);
+  attachGrip(grip, {
+    read: () => barSize,
+    preview: (px) => {
+      barSize = px;
+      applySize(bar, px);
+    },
+    commit: (px) => {
+      void runSafe("top-bar size", () => game.settings.set(MODULE_ID, SETTINGS.TOP_BAR_SIZE, px));
+    },
+    clamp: clampBarSize,
+    min: BAR_MIN,
+    max: BAR_MAX,
+    defaultSize: BAR_DEFAULT,
+    step: 4
+  });
+  (document.getElementById("ui-top") ?? document.body).appendChild(bar);
+  return { bar, strip };
 }
 
 /** Pan to and control a combatant's token (GM or owner). */
@@ -309,19 +352,20 @@ function renderControls(combat: FoundryCombat): HTMLElement {
 /** Render (or hide) the bar for the active combat. */
 function render(): void {
   try {
-    const element = container();
+    const { bar, strip } = container();
+    applySize(bar, barSize);
     const combat = game.combats?.active ?? null;
     if (!combat || !enabled()) {
-      element.hidden = true;
-      element.replaceChildren();
-      document.querySelectorAll(`.${MODULE_ID}-tb-members`).forEach((el) => el.remove());
+      bar.hidden = true;
+      strip.replaceChildren();
+      document.querySelectorAll(`.${POPOVER_CLASS}`).forEach((el) => el.remove());
       return;
     }
     const rows = buildTrackerView(toInput(combat), viewer());
-    element.replaceChildren(...rows.map(renderRow));
-    if (game.user?.isGM === true) element.appendChild(renderControls(combat));
-    element.hidden = false;
-    renderPopovers(element, rows);
+    strip.replaceChildren(...rows.map(renderRow));
+    if (game.user?.isGM === true) strip.appendChild(renderControls(combat));
+    bar.hidden = false;
+    renderPopovers(strip, rows);
   } catch (error) {
     console.error(`${MODULE_ID} | top-bar render`, error);
   }

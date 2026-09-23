@@ -54,7 +54,9 @@ var SETTINGS = {
   /** World setting: whether the top-bar tracker is shown. */
   ENABLE_TOP_BAR: "enableTopBar",
   /** World setting: how non-owned HP is shown to players ("bar" | "none"). */
-  PLAYER_HP_POLICY: "playerHpPolicy"
+  PLAYER_HP_POLICY: "playerHpPolicy",
+  /** User setting (hidden): top-bar portrait size in px, set by the resize grip. */
+  TOP_BAR_SIZE: "topBarSize"
 };
 var DEFAULT_KILL_WINDOW_SECONDS = 45;
 var KEYBINDINGS = {
@@ -216,6 +218,15 @@ var DeathService = class {
   }
 };
 
+// src/logic/bar-size.ts
+var BAR_MIN = 32;
+var BAR_MAX = 128;
+var BAR_DEFAULT = 44;
+function clampBarSize(px) {
+  if (Number.isNaN(px)) return BAR_DEFAULT;
+  return Math.min(BAR_MAX, Math.max(BAR_MIN, Math.round(px)));
+}
+
 // src/settings.ts
 function registerSettings() {
   game.settings.register(MODULE_ID, SETTINGS.PLAYER_TIMEOUT, {
@@ -264,6 +275,13 @@ function registerSettings() {
     },
     default: "bar"
   });
+  game.settings.register(MODULE_ID, SETTINGS.TOP_BAR_SIZE, {
+    name: "TACTICAL_INITIATIVE.Settings.TopBarSize.Name",
+    scope: "user",
+    config: false,
+    type: Number,
+    default: BAR_DEFAULT
+  });
 }
 function getPlayerTimeoutMs() {
   const raw = game.settings.get(MODULE_ID, SETTINGS.PLAYER_TIMEOUT);
@@ -278,6 +296,10 @@ function getKillWindowMs() {
   const raw = game.settings.get(MODULE_ID, SETTINGS.KILL_WINDOW);
   const seconds = typeof raw === "number" && Number.isFinite(raw) ? raw : DEFAULT_KILL_WINDOW_SECONDS;
   return Math.max(5, seconds) * 1e3;
+}
+function getTopBarSize() {
+  const raw = game.settings.get(MODULE_ID, SETTINGS.TOP_BAR_SIZE);
+  return clampBarSize(typeof raw === "number" ? raw : BAR_DEFAULT);
 }
 
 // src/logic/group.ts
@@ -2137,6 +2159,90 @@ function capitalize(tag) {
   return `${tag.charAt(0).toUpperCase()}${tag.slice(1)}`;
 }
 
+// src/ui/grip.ts
+function attachGrip(grip, options) {
+  let dragging = false;
+  let activePointer = null;
+  let startY = 0;
+  let startSize = 0;
+  let current = 0;
+  grip.setAttribute("role", "separator");
+  grip.setAttribute("aria-orientation", "horizontal");
+  grip.setAttribute("aria-valuemin", String(options.min));
+  grip.setAttribute("aria-valuemax", String(options.max));
+  grip.setAttribute("aria-valuenow", String(options.read()));
+  grip.tabIndex = 0;
+  const apply = (px) => {
+    options.preview(px);
+    grip.setAttribute("aria-valuenow", String(px));
+  };
+  const set = (px) => {
+    const next = options.clamp(px);
+    const before = options.read();
+    apply(next);
+    if (next !== before) options.commit(next);
+  };
+  const onDown = (event) => {
+    if (dragging) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragging = true;
+    activePointer = event.pointerId;
+    startY = event.clientY;
+    startSize = options.read();
+    current = startSize;
+    if (typeof grip.setPointerCapture === "function") {
+      try {
+        grip.setPointerCapture(event.pointerId);
+      } catch {
+      }
+    }
+  };
+  const onMove = (event) => {
+    if (!dragging || event.pointerId !== activePointer) return;
+    current = options.clamp(startSize + (event.clientY - startY));
+    apply(current);
+  };
+  const onEnd = (event) => {
+    if (!dragging) return;
+    const pointerEvent = event;
+    if (pointerEvent?.pointerId !== void 0 && pointerEvent.pointerId !== activePointer) return;
+    dragging = false;
+    activePointer = null;
+    if (current !== startSize) options.commit(current);
+  };
+  const onDblClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragging = false;
+    activePointer = null;
+    set(options.defaultSize);
+  };
+  const onKey = (event) => {
+    if (event.key === "ArrowDown") set(options.read() + options.step);
+    else if (event.key === "ArrowUp") set(options.read() - options.step);
+    else if (event.key === "Home") set(options.defaultSize);
+    else return;
+    event.preventDefault();
+  };
+  grip.addEventListener("pointerdown", onDown);
+  grip.addEventListener("pointermove", onMove);
+  grip.addEventListener("pointerup", onEnd);
+  grip.addEventListener("pointercancel", onEnd);
+  grip.addEventListener("lostpointercapture", onEnd);
+  grip.addEventListener("dblclick", onDblClick);
+  grip.addEventListener("keydown", onKey);
+  return () => {
+    grip.removeEventListener("pointerdown", onDown);
+    grip.removeEventListener("pointermove", onMove);
+    grip.removeEventListener("pointerup", onEnd);
+    grip.removeEventListener("pointercancel", onEnd);
+    grip.removeEventListener("lostpointercapture", onEnd);
+    grip.removeEventListener("dblclick", onDblClick);
+    grip.removeEventListener("keydown", onKey);
+  };
+}
+
 // src/ui/menu.ts
 var outsideListeners = /* @__PURE__ */ new Map();
 function closeMenu(doc, id) {
@@ -2214,14 +2320,43 @@ function toInput(combat) {
     currentId: combat.combatant?.id ?? null
   };
 }
+var STRIP_CLASS = `${MODULE_ID}-tb-strip`;
+var barSize = BAR_DEFAULT;
+function applySize(bar, px) {
+  bar.style.setProperty("--ti-portrait", `${px}px`);
+}
 function container() {
   const existing = document.getElementById(CONTAINER_ID);
-  if (existing) return existing;
-  const element = document.createElement("div");
-  element.id = CONTAINER_ID;
-  element.className = `${MODULE_ID}-top-bar`;
-  (document.getElementById("ui-top") ?? document.body).appendChild(element);
-  return element;
+  const existingStrip = existing?.querySelector(`.${STRIP_CLASS}`);
+  if (existing && existingStrip) return { bar: existing, strip: existingStrip };
+  const bar = document.createElement("div");
+  bar.id = CONTAINER_ID;
+  bar.className = `${MODULE_ID}-top-bar`;
+  const strip = document.createElement("div");
+  strip.className = STRIP_CLASS;
+  const grip = document.createElement("div");
+  grip.className = `${MODULE_ID}-tb-grip`;
+  grip.title = game.i18n.localize("TACTICAL_INITIATIVE.Tracker.ResizeGrip");
+  bar.append(strip, grip);
+  barSize = getTopBarSize();
+  applySize(bar, barSize);
+  attachGrip(grip, {
+    read: () => barSize,
+    preview: (px) => {
+      barSize = px;
+      applySize(bar, px);
+    },
+    commit: (px) => {
+      void runSafe("top-bar size", () => game.settings.set(MODULE_ID, SETTINGS.TOP_BAR_SIZE, px));
+    },
+    clamp: clampBarSize,
+    min: BAR_MIN,
+    max: BAR_MAX,
+    defaultSize: BAR_DEFAULT,
+    step: 4
+  });
+  (document.getElementById("ui-top") ?? document.body).appendChild(bar);
+  return { bar, strip };
 }
 function focusToken(combatantId) {
   const location = findCombatant(combatantId);
@@ -2398,19 +2533,20 @@ function renderControls(combat) {
 }
 function render() {
   try {
-    const element = container();
+    const { bar, strip } = container();
+    applySize(bar, barSize);
     const combat = game.combats?.active ?? null;
     if (!combat || !enabled()) {
-      element.hidden = true;
-      element.replaceChildren();
-      document.querySelectorAll(`.${MODULE_ID}-tb-members`).forEach((el) => el.remove());
+      bar.hidden = true;
+      strip.replaceChildren();
+      document.querySelectorAll(`.${POPOVER_CLASS}`).forEach((el) => el.remove());
       return;
     }
     const rows = buildTrackerView(toInput(combat), viewer());
-    element.replaceChildren(...rows.map(renderRow));
-    if (game.user?.isGM === true) element.appendChild(renderControls(combat));
-    element.hidden = false;
-    renderPopovers(element, rows);
+    strip.replaceChildren(...rows.map(renderRow));
+    if (game.user?.isGM === true) strip.appendChild(renderControls(combat));
+    bar.hidden = false;
+    renderPopovers(strip, rows);
   } catch (error) {
     console.error(`${MODULE_ID} | top-bar render`, error);
   }
