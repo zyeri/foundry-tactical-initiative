@@ -710,7 +710,7 @@ var FoundryAdapter = class {
     return game.actors?.get(actorId) ?? null;
   }
   async listCombatants(_combatId) {
-    return this.combat.combatants.contents.map((combatant) => {
+    return this.combat.combatants.contents.filter((combatant) => combatant.actor !== null).map((combatant) => {
       const slot = combatant.getFlag(MODULE_ID, FLAGS.BOSS_SLOT);
       const order = combatant.getFlag(MODULE_ID, FLAGS.BOSS_ORDER);
       const isBossSlot = slot === "start" || slot === "end";
@@ -1640,9 +1640,9 @@ var GroupingService = class {
     );
   }
   /** Delete any candidate group that no longer has members. */
-  async sweep(combatId, candidates) {
+  async sweep(combatId, candidates2) {
     const used = new Set(this.port.listCombatants(combatId).map((c) => c.groupId));
-    for (const groupId of new Set(candidates)) {
+    for (const groupId of new Set(candidates2)) {
       if (groupId !== null && !used.has(groupId)) await this.port.deleteGroup(combatId, groupId);
     }
   }
@@ -2438,6 +2438,13 @@ function renderRow(row) {
   if (row.kind === "combatant") {
     li.dataset["combatantId"] = row.combatantId;
     if (row.isDefeated) li.classList.add(`${MODULE_ID}-tb-defeated`);
+    if (row.tokenMissing) {
+      li.classList.add(`${MODULE_ID}-tb-missing`);
+      const mark = document.createElement("span");
+      mark.className = `${MODULE_ID}-tb-missing-mark`;
+      mark.textContent = "?";
+      li.appendChild(mark);
+    }
     if (row.img) li.style.backgroundImage = `url("${row.img}")`;
     if (row.hp.shown !== "none" && row.hp.value !== null && row.hp.max !== null && row.hp.max > 0) {
       const bar = document.createElement("div");
@@ -2468,7 +2475,7 @@ function renderRow(row) {
       event.preventDefault();
       openCombatantMenu(li, event.clientX, event.clientY);
     });
-    li.title = row.name;
+    li.title = row.tokenMissing ? `${row.name} (${game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Marker")})` : row.name;
   } else {
     li.dataset["groupId"] = row.groupId;
     li.style.borderColor = row.color;
@@ -2595,6 +2602,88 @@ function registerTopBar() {
   }
 }
 
+// src/logic/leftovers.ts
+function findLeftovers(candidates2, deleted, tokenExists2) {
+  const keys = new Set(deleted.map((ref) => `${ref.sceneId}.${ref.tokenId}`));
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const candidate of candidates2) {
+    const { sceneId, tokenId } = candidate;
+    if (sceneId === null || tokenId === null) continue;
+    if (!keys.has(`${sceneId}.${tokenId}`)) continue;
+    if (tokenExists2(sceneId, tokenId)) continue;
+    const id = `${candidate.combatId}.${candidate.combatantId}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push({ combatId: candidate.combatId, combatantId: candidate.combatantId, name: candidate.name });
+  }
+  return result;
+}
+
+// src/adapter/leftovers.ts
+var FLUSH_DELAY_MS = 1e3;
+var queue = [];
+var timer = null;
+function escapeHtml3(value) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function tokenExists(sceneId, tokenId) {
+  return game.scenes?.get(sceneId)?.tokens.has(tokenId) === true;
+}
+function candidates() {
+  return (game.combats?.contents ?? []).flatMap(
+    (combat) => combat.turns.map((c) => ({
+      combatId: combat.id,
+      combatantId: c.id,
+      name: c.name,
+      sceneId: c.sceneId,
+      tokenId: c.tokenId
+    }))
+  );
+}
+async function flush() {
+  const deleted = queue;
+  queue = [];
+  timer = null;
+  const leftovers = findLeftovers(candidates(), deleted, tokenExists);
+  if (leftovers.length === 0) return;
+  const names = leftovers.map((l) => `<li>${escapeHtml3(l.name)}</li>`).join("");
+  const choice = await foundry.applications.api.DialogV2.wait({
+    window: { title: game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Title") },
+    content: `<p>${escapeHtml3(game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Body"))}</p><ul>${names}</ul>`,
+    buttons: [
+      { action: "remove", label: game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Remove"), default: true },
+      { action: "keep", label: game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Keep") }
+    ],
+    rejectClose: false,
+    modal: true
+  });
+  if (choice !== "remove") return;
+  const byCombat = /* @__PURE__ */ new Map();
+  for (const leftover of leftovers) {
+    const combat = game.combats?.get(leftover.combatId);
+    if (!combat?.combatants.get(leftover.combatantId)) continue;
+    byCombat.set(leftover.combatId, [...byCombat.get(leftover.combatId) ?? [], leftover.combatantId]);
+  }
+  for (const [combatId, ids] of byCombat) {
+    const combat = game.combats?.get(combatId);
+    const still = ids.filter((id) => combat?.combatants.get(id));
+    if (combat && still.length > 0) await combat.deleteEmbeddedDocuments("Combatant", still);
+  }
+}
+function registerLeftoverSweep() {
+  Hooks.on("deleteToken", (token) => {
+    if (!isActiveGM()) return;
+    const sceneId = token.parent?.id ?? null;
+    if (sceneId === null) return;
+    queue.push({ sceneId, tokenId: token.id });
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => {
+      guard("leftover sweep", flush);
+    }, FLUSH_DELAY_MS);
+  });
+}
+
 // src/main.ts
 Hooks.once("init", () => {
   registerSettings();
@@ -2609,6 +2698,7 @@ Hooks.once("init", () => {
   registerGroupingKeybinding();
   registerTokenHudButton();
   registerTopBar();
+  registerLeftoverSweep();
   console.log(`${MODULE_ID} | initialized`);
 });
 //# sourceMappingURL=main.js.map

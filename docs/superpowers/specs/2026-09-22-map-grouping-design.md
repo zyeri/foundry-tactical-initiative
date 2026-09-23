@@ -244,7 +244,7 @@ Core deletes combatants of a deleted token; the module only catches what core mi
 - **Hook.** `deleteToken(doc, options, userId)` fires on every client; the sweep runs
   on the active GM only (`isActiveGM()`), regardless of who deleted.
 - **Batch.** Deleted `{sceneId, tokenId}` pairs go into a module-level queue; a
-  `foundry.utils.debounce(flush, 250)` flushes it. This batches multi-deletes and lets
+  module timer flushes it 1000 ms after the last deletion (plain `setTimeout`; 250 ms risked prompting before core's own combatant deletes reached the active GM). This batches multi-deletes and lets
   core's own combatant deletion finish first.
 - **Flush.** Pure helper `findLeftovers(combats, deleted, tokenExists)` in
   `src/logic/leftovers.ts`: combatants in any combat whose `(sceneId, tokenId)` is in the

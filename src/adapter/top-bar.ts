@@ -253,6 +253,13 @@ function renderRow(row: TrackerRow): HTMLElement {
   if (row.kind === "combatant") {
     li.dataset["combatantId"] = row.combatantId;
     if (row.isDefeated) li.classList.add(`${MODULE_ID}-tb-defeated`);
+    if (row.tokenMissing) {
+      li.classList.add(`${MODULE_ID}-tb-missing`);
+      const mark = document.createElement("span");
+      mark.className = `${MODULE_ID}-tb-missing-mark`;
+      mark.textContent = "?";
+      li.appendChild(mark);
+    }
     if (row.img) li.style.backgroundImage = `url("${row.img}")`;
     if (row.hp.shown !== "none" && row.hp.value !== null && row.hp.max !== null && row.hp.max > 0) {
       const bar = document.createElement("div");
@@ -283,7 +290,9 @@ function renderRow(row: TrackerRow): HTMLElement {
       event.preventDefault();
       openCombatantMenu(li, event.clientX, event.clientY);
     });
-    li.title = row.name;
+    li.title = row.tokenMissing
+      ? `${row.name} (${game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Marker")})`
+      : row.name;
   } else {
     li.dataset["groupId"] = row.groupId;
     li.style.borderColor = row.color;

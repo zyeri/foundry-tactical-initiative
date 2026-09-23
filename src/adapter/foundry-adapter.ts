@@ -55,7 +55,9 @@ export class FoundryAdapter implements FoundryPort {
   }
 
   public async listCombatants(_combatId: string): Promise<CombatantView[]> {
-    return this.combat.combatants.contents.map((combatant): CombatantView => {
+    // A combatant with no actor (e.g. kept after its unlinked token was deleted)
+    // cannot roll; skip it so it cannot break the reroll for everyone after it.
+    return this.combat.combatants.contents.filter((combatant) => combatant.actor !== null).map((combatant): CombatantView => {
       const slot = combatant.getFlag(MODULE_ID, FLAGS.BOSS_SLOT);
       const order = combatant.getFlag(MODULE_ID, FLAGS.BOSS_ORDER);
       const isBossSlot = slot === "start" || slot === "end";
