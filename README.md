@@ -318,7 +318,7 @@ are assumptions to confirm live.
 
 If the bar never appears, check the DOM anchor (`#ui-top`) and the hook names in a v14 build.
 
-## Map grouping checklist (v1.5.0-rc2, Plan A)
+## Map grouping checklist (v1.5.0-rc2)
 
 v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
 
@@ -347,6 +347,23 @@ v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
 11. **A group that rolls highest keeps its turn at round start** (and a combat that is a
     single group stays on round 1 until Next Turn).
 12. **Roll All mid-combat** while a group member is current does not advance the turn.
+13. **Resize.** Drag the grip at the bar's bottom-right corner down and up: portraits, badges,
+    HP bars, round label and turn buttons all scale together (32-128px). Change HP on a
+    combatant mid-drag: the drag continues. Reload: the size persists. Log in as the same user
+    on another browser: same size. Double-click the grip: back to 44px. Focus the grip (Tab)
+    and use ArrowUp/ArrowDown/Home.
+14. **Size footprint.** At 128px with 10+ combatants the strip scrolls horizontally and does
+    not cover notifications or scene navigation.
+15. **Normal delete, no module prompt.** Delete an in-combat token (Delete key, confirm core's
+    dialog): the combatant disappears and NO "Combatants without a token" dialog appears.
+16. **Leftover sweep.** Reproduce the original leftover case (see the spec's P0 probe results).
+    Within about a second the dialog lists the leftover(s). Remove: they leave the tracker.
+    Keep: the portrait turns dashed with a "?" and its tooltip says "token deleted"; the next
+    round's reroll still gives everyone else initiative.
+17. **Boss delete.** Delete a Boss token: no end-slot entry survives (or, if one does, the
+    dialog offers it).
+18. **Restore a deleted mob.** Kill a mob (F4 hides it and whispers Restore), delete its token,
+    then click Restore: a warning says the token no longer exists.
 
 ## Development
 
