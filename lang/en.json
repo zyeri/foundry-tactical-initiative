@@ -72,6 +72,7 @@
   "TACTICAL_INITIATIVE.Chat.BossDied": "{boss} has fallen!",
   "TACTICAL_INITIATIVE.Chat.RestoreMob": "Restore {name} to combat",
   "TACTICAL_INITIATIVE.Chat.RestoreNoCombat": "That combat no longer exists; the token was un-hidden but not re-added.",
+  "TACTICAL_INITIATIVE.Chat.RestoreNoToken": "That token no longer exists; nothing to restore.",
 
   "TACTICAL_INITIATIVE.Leftover.Title": "Combatants without a token",
   "TACTICAL_INITIATIVE.Leftover.Body": "These combatants lost their token. Remove them from combat?",

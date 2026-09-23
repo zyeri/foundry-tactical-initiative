@@ -176,7 +176,10 @@ var DeathService = class {
    */
   async restoreMob(tokenUuid, combatId) {
     const token = this.port.resolveToken(tokenUuid);
-    if (!token) return;
+    if (!token) {
+      this.port.warnRestoreNoToken();
+      return;
+    }
     await this.port.unhideToken(token);
     if (!this.port.combatExists(combatId)) {
       this.port.warnRestoreNoCombat();
@@ -1050,6 +1053,9 @@ var FoundryDeathPort = class {
   }
   warnRestoreNoCombat() {
     ui.notifications?.warn(game.i18n.localize("TACTICAL_INITIATIVE.Chat.RestoreNoCombat"));
+  }
+  warnRestoreNoToken() {
+    ui.notifications?.warn(game.i18n.localize("TACTICAL_INITIATIVE.Chat.RestoreNoToken"));
   }
 };
 function resolveItemName(itemUuid) {

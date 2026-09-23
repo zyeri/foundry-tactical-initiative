@@ -30,6 +30,7 @@ export class FakeDeathPort implements DeathPort {
   public unhidden: string[] = [];
   public added: { combatId: string; tokenId: string }[] = [];
   public warnedNoCombat = 0;
+  public warnedNoToken = 0;
 
   public now(): number {
     return this.nowValue;
@@ -93,5 +94,8 @@ export class FakeDeathPort implements DeathPort {
   }
   public warnRestoreNoCombat(): void {
     this.warnedNoCombat += 1;
+  }
+  public warnRestoreNoToken(): void {
+    this.warnedNoToken += 1;
   }
 }

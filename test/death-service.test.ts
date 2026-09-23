@@ -134,8 +134,10 @@ describe("DeathService.restoreMob", () => {
     expect(port.added).toEqual([]);
   });
 
-  it("does nothing when the token uuid cannot be resolved", async () => {
+  it("warns and does nothing else when the token uuid cannot be resolved", async () => {
     await service.restoreMob("Scene.s.Token.gone", "c1");
     expect(port.unhidden).toEqual([]);
+    expect(port.added).toEqual([]);
+    expect(port.warnedNoToken).toBe(1);
   });
 });
