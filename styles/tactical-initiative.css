@@ -85,7 +85,7 @@ select.tactical-initiative-tag-select {
   display: flex;
   align-items: flex-end;
   gap: 0.25em;
-  padding: calc(var(--ti-portrait) * 6 / 44 + 3px) 0.4em 0.2em;
+  padding: calc(var(--ti-portrait) * 12 / 44 + 3px) 0.4em 0.2em;
   overflow-x: auto;
   overflow-y: hidden;
 }
