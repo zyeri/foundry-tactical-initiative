@@ -106,6 +106,7 @@ export function attachGrip(grip: HTMLElement, options: GripOptions): () => void 
     else if (event.key === "Home") set(options.defaultSize);
     else return;
     event.preventDefault();
+    event.stopPropagation();
   };
 
   grip.addEventListener("pointerdown", onDown);

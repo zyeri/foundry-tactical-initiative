@@ -125,6 +125,22 @@ describe("attachGrip", () => {
     expect(grip.getAttribute("aria-valuenow")).toBe("64");
   });
 
+  it("handled keys do not reach window listeners", () => {
+    const windowCalls: string[] = [];
+    const onWindowKey = (event: KeyboardEvent): void => {
+      windowCalls.push(event.key);
+    };
+    window.addEventListener("keydown", onWindowKey);
+    try {
+      grip.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      expect(windowCalls).toEqual([]);
+      grip.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      expect(windowCalls).toEqual(["a"]);
+    } finally {
+      window.removeEventListener("keydown", onWindowKey);
+    }
+  });
+
   it("a second pointer during a drag is ignored", () => {
     pointer("pointerdown", 100, 1);
     pointer("pointerdown", 300, 2);
