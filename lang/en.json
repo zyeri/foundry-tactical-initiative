@@ -24,13 +24,22 @@
   "TACTICAL_INITIATIVE.Menu.TagAs": "Tactical: tag as {tag}",
   "TACTICAL_INITIATIVE.Menu.SheetTitle": "Tactical Initiative tag",
 
-  "TACTICAL_INITIATIVE.Group.AddTo": "Tactical: add to group",
-  "TACTICAL_INITIATIVE.Group.New": "New group",
   "TACTICAL_INITIATIVE.Group.Remove": "Tactical: remove from group",
   "TACTICAL_INITIATIVE.Group.Rename": "Tactical: rename group",
   "TACTICAL_INITIATIVE.Group.Recolor": "Tactical: recolor group",
   "TACTICAL_INITIATIVE.Group.Disband": "Tactical: disband group",
-  "TACTICAL_INITIATIVE.Group.DefaultName": "Group {n}",
+  "TACTICAL_INITIATIVE.Group.FallbackName": "Group",
+  "TACTICAL_INITIATIVE.Grouping.HudButton": "Group selected tokens",
+  "TACTICAL_INITIATIVE.Grouping.KeyName": "Group selected tokens",
+  "TACTICAL_INITIATIVE.Grouping.KeyHint": "Adds the selected tokens to combat and to a group (new or existing).",
+  "TACTICAL_INITIATIVE.Grouping.NothingSelected": "Select one or more tokens first.",
+  "TACTICAL_INITIATIVE.Grouping.NoScene": "Open a scene before grouping tokens.",
+  "TACTICAL_INITIATIVE.Grouping.DialogTitle": "Group tokens",
+  "TACTICAL_INITIATIVE.Grouping.NameLabel": "New group name",
+  "TACTICAL_INITIATIVE.Grouping.Existing": "Existing groups",
+  "TACTICAL_INITIATIVE.Grouping.NewGroup": "New group",
+  "TACTICAL_INITIATIVE.Grouping.Join": "Join {name}",
+  "TACTICAL_INITIATIVE.Grouping.RemoveFromGroup": "Remove from group",
 
   "TACTICAL_INITIATIVE.HUD.Title": "Group control",
   "TACTICAL_INITIATIVE.HUD.Open": "Tactical: open group HUD",
@@ -45,6 +54,8 @@
   "TACTICAL_INITIATIVE.Tracker.NextRound": "Next round",
   "TACTICAL_INITIATIVE.Tracker.EndCombat": "End combat",
   "TACTICAL_INITIATIVE.Tracker.Round": "Round {n}",
+  "TACTICAL_INITIATIVE.Tracker.ResizeGrip": "Drag to resize (double-click to reset; arrow keys when focused)",
+  "TACTICAL_INITIATIVE.Settings.TopBarSize.Name": "Top-bar portrait size",
   "TACTICAL_INITIATIVE.Settings.EnableTopBar.Name": "Show the top-bar tracker",
   "TACTICAL_INITIATIVE.Settings.EnableTopBar.Hint": "Render an always-on horizontal combat tracker across the top of the screen.",
   "TACTICAL_INITIATIVE.Settings.PlayerHpPolicy.Name": "Player HP display",
@@ -60,5 +71,12 @@
   "TACTICAL_INITIATIVE.Chat.BossKilledNoWeapon": "{killer} has killed {boss}!",
   "TACTICAL_INITIATIVE.Chat.BossDied": "{boss} has fallen!",
   "TACTICAL_INITIATIVE.Chat.RestoreMob": "Restore {name} to combat",
-  "TACTICAL_INITIATIVE.Chat.RestoreNoCombat": "That combat no longer exists; the token was un-hidden but not re-added."
+  "TACTICAL_INITIATIVE.Chat.RestoreNoCombat": "That combat no longer exists; the token was un-hidden but not re-added.",
+  "TACTICAL_INITIATIVE.Chat.RestoreNoToken": "That token no longer exists; nothing to restore.",
+
+  "TACTICAL_INITIATIVE.Leftover.Title": "Combatants without a token",
+  "TACTICAL_INITIATIVE.Leftover.Body": "These combatants lost their token. Remove them from combat?",
+  "TACTICAL_INITIATIVE.Leftover.Remove": "Remove",
+  "TACTICAL_INITIATIVE.Leftover.Keep": "Keep",
+  "TACTICAL_INITIATIVE.Leftover.Marker": "token deleted"
 }

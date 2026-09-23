@@ -126,8 +126,16 @@ export const SETTINGS = {
   /** World setting: whether the top-bar tracker is shown. */
   ENABLE_TOP_BAR: "enableTopBar",
   /** World setting: how non-owned HP is shown to players ("bar" | "none"). */
-  PLAYER_HP_POLICY: "playerHpPolicy"
+  PLAYER_HP_POLICY: "playerHpPolicy",
+  /** User setting (hidden): top-bar portrait size in px, set by the resize grip. */
+  TOP_BAR_SIZE: "topBarSize"
 } as const;
 
 /** Default staleness window (seconds) for F5 kill attribution. */
 export const DEFAULT_KILL_WINDOW_SECONDS = 45 as const;
+
+/** Keybinding action ids. */
+export const KEYBINDINGS = {
+  /** GM: group the controlled tokens (default G). */
+  GROUP_SELECTED: "groupSelected"
+} as const;

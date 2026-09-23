@@ -13,7 +13,8 @@ function c(over: Partial<TrackerCombatant> & { id: string }): TrackerCombatant {
     isDefeated: over.isDefeated ?? false,
     ownedByViewer: over.ownedByViewer ?? false,
     hp: over.hp ?? { value: 7, max: 10 },
-    conditions: over.conditions ?? []
+    conditions: over.conditions ?? [],
+    tokenMissing: over.tokenMissing ?? false
   };
 }
 
@@ -75,5 +76,57 @@ describe("buildTrackerView", () => {
   it("carries tag and defeated on a combatant row", () => {
     const rows = buildTrackerView(input([c({ id: "b", tag: "boss", isDefeated: true })]), GM);
     expect(rows[0]).toMatchObject({ kind: "combatant", tag: "boss", isDefeated: true });
+  });
+
+  it("stacks up to three living member portraits, in turn order", () => {
+    const rows = buildTrackerView(
+      input([
+        c({ id: "m1", groupId: "g" }),
+        c({ id: "m2", groupId: "g", isDefeated: true }),
+        c({ id: "m3", groupId: "g" }),
+        c({ id: "m4", groupId: "g" }),
+        c({ id: "m5", groupId: "g" })
+      ]),
+      GM
+    );
+    expect(rows[0]).toMatchObject({
+      kind: "group",
+      portraits: ["m1.png", "m3.png", "m4.png"],
+      img: "m1.png",
+      living: 4,
+      memberCount: 5
+    });
+  });
+
+  it("lists members with defeated state for the expand popover", () => {
+    const rows = buildTrackerView(
+      input([c({ id: "m1", groupId: "g" }), c({ id: "m2", groupId: "g", isDefeated: true })]),
+      GM
+    );
+    expect(rows[0]).toMatchObject({
+      members: [
+        { id: "m1", name: "m1", img: "m1.png", defeated: false },
+        { id: "m2", name: "m2", img: "m2.png", defeated: true }
+      ]
+    });
+  });
+
+  it("never leaks hidden members to players in portraits or members", () => {
+    const rows = buildTrackerView(
+      input([c({ id: "m1", groupId: "g" }), c({ id: "m2", groupId: "g", hidden: true })]),
+      PLAYER
+    );
+    expect(rows[0]).toMatchObject({ portraits: ["m1.png"], members: [{ id: "m1" }], living: 1 });
+  });
+
+  it("falls back to defeated portraits when every member is down", () => {
+    const rows = buildTrackerView(input([c({ id: "m1", groupId: "g", isDefeated: true })]), GM);
+    expect(rows[0]).toMatchObject({ portraits: ["m1.png"], living: 0 });
+  });
+
+  it("carries tokenMissing on a combatant row", () => {
+    const rows = buildTrackerView(input([c({ id: "ghost", tokenMissing: true }), c({ id: "ok" })]), GM);
+    expect(rows[0]).toMatchObject({ kind: "combatant", tokenMissing: true });
+    expect(rows[1]).toMatchObject({ kind: "combatant", tokenMissing: false });
   });
 });

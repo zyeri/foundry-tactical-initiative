@@ -6,7 +6,10 @@
 
 import { registerCombatEvents } from "./adapter/combat-events";
 import { registerGroupUI } from "./adapter/group-ui";
+import { registerGroupingKeybinding, registerTokenHudButton } from "./adapter/grouping-ui";
+import { registerGroupTurns } from "./adapter/group-turns";
 import { registerTopBar } from "./adapter/top-bar";
+import { registerLeftoverSweep } from "./adapter/leftovers";
 import { registerHooks } from "./adapter/hooks";
 import { registerQueryHandler } from "./adapter/player-query";
 import {
@@ -21,11 +24,15 @@ Hooks.once("init", (): void => {
   registerSettings();
   registerQueryHandler();
   registerHooks();
+  registerGroupTurns();
   registerCombatEvents();
   registerTrackerContextMenu();
   registerActorDirectoryContextMenu();
   registerSheetTagControl();
   registerGroupUI();
+  registerGroupingKeybinding();
+  registerTokenHudButton();
   registerTopBar();
+  registerLeftoverSweep();
   console.log(`${MODULE_ID} | initialized`);
 });

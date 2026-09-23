@@ -6,6 +6,7 @@
  */
 
 import type { DamageInput, GroupControlPort, GroupMemberRef } from "../group-control-service";
+import { groupIdOf } from "../logic/group";
 import { isActiveGM } from "./hooks";
 
 /** A {@link GroupControlPort} bound to one combat, reading groups from it live. */
@@ -23,7 +24,7 @@ export class FoundryGroupControlPort implements GroupControlPort {
    */
   public members(groupId: string): GroupMemberRef[] {
     return this.combat.combatants.contents
-      .filter((combatant) => (typeof combatant.group === "string" ? combatant.group : null) === groupId)
+      .filter((combatant) => groupIdOf(combatant) === groupId)
       .map((combatant) => ({
         combatantId: combatant.id,
         tokenId: combatant.tokenId,

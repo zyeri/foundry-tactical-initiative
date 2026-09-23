@@ -74,6 +74,10 @@ interface FoundryTokenDocument {
   /** The scene this token belongs to. */
   readonly parent: { id: string } | null;
   update(data: object): Promise<FoundryTokenDocument>;
+  /** The token's actor (synthetic for unlinked tokens). */
+  readonly actor?: FoundryActor | null;
+  /** True when the token is hidden from players. */
+  readonly hidden?: boolean;
 }
 
 /** A ChatMessage document (subset used to capture dnd5e damage cards). */
@@ -98,8 +102,13 @@ interface FoundryCombatant {
   readonly actor: FoundryActor | null;
   readonly initiative: number | null;
   readonly isDefeated: boolean;
-  /** The native CombatantGroup id, or null/empty when ungrouped. */
-  readonly group?: string | null;
+  /**
+   * The native group: v14 resolves this to the CombatantGroup document; older
+   * builds may expose the id. Always read it through `groupIdOf`.
+   */
+  readonly group?: string | FoundryCombatantGroup | null;
+  /** Raw stored data; `group` is the id string. */
+  readonly _source?: { group?: string | null };
   /** The token/combatant display name. */
   readonly name: string;
   /** The combatant portrait image path. */
@@ -146,7 +155,17 @@ interface FoundryCombat {
   createEmbeddedDocuments(type: string, data: object[]): Promise<FoundryCombatant[]>;
   updateEmbeddedDocuments(type: string, updates: object[]): Promise<unknown[]>;
   deleteEmbeddedDocuments(type: string, ids: string[]): Promise<unknown[]>;
-  update(data: object): Promise<FoundryCombat>;
+  update(data: object, options?: object): Promise<FoundryCombat>;
+  /** The scene this combat is linked to, or null when unlinked. */
+  readonly scene: { id: string } | null;
+  /** True for the combat the tracker is showing. */
+  readonly active: boolean;
+  /** Current turn index, or null before the first turn. */
+  readonly turn: number | null;
+  /** Combat settings (core). */
+  readonly settings?: { skipDefeated?: boolean };
+  /** Make this the active combat. */
+  activate(): Promise<unknown>;
 }
 
 /** A Foundry User document (subset). */
@@ -168,6 +187,7 @@ interface FoundryUsers extends FoundryCollection<FoundryUser> {
 interface FoundrySettings {
   register(namespace: string, key: string, data: object): void;
   get(namespace: string, key: string): unknown;
+  set(namespace: string, key: string, value: unknown): Promise<unknown>;
 }
 
 /** Foundry's i18n helper (subset). */
@@ -192,6 +212,13 @@ interface FoundryGame {
   readonly combats: (FoundryCollection<FoundryCombat> & { active: FoundryCombat | null }) | null;
   readonly settings: FoundrySettings;
   readonly i18n: FoundryI18n;
+  /** The combat viewed by this client, or null. */
+  readonly combat?: FoundryCombat | null;
+  readonly keybindings: {
+    register(namespace: string, action: string, data: object): void;
+  };
+  /** World scenes (subset): token existence lookup. */
+  readonly scenes?: FoundryCollection<{ id: string; tokens: { has(id: string): boolean } }> | null;
 }
 
 /** A DialogV2 button definition. */
@@ -199,6 +226,7 @@ interface DialogV2Button {
   action: string;
   label: string;
   default?: boolean;
+  callback?: (event: Event, button: HTMLButtonElement, dialog: unknown) => unknown;
 }
 
 /** DialogV2.wait configuration (subset). */
@@ -228,7 +256,7 @@ interface DialogV2PromptConfig {
 
 /** The DialogV2 application class (subset). */
 interface DialogV2Static {
-  wait(config: DialogV2WaitConfig): Promise<string | null>;
+  wait(config: DialogV2WaitConfig): Promise<unknown>;
   /** Resolves to the ok button's callback return value; rejects if dismissed. */
   prompt(config: DialogV2PromptConfig): Promise<unknown>;
 }
@@ -242,6 +270,7 @@ interface ChatMessageStatic {
 interface FoundryNotifications {
   warn(message: string): void;
   info(message: string): void;
+  error(message: string): void;
 }
 
 /**
@@ -283,11 +312,17 @@ interface TokenObject {
   setTarget(targeted: boolean, options?: { releaseOthers?: boolean }): void;
   /** The token's canvas center, for panning. */
   readonly center?: { x: number; y: number };
+  readonly id: string;
+  readonly document: FoundryTokenDocument;
 }
 
 /** The canvas global (subset): the token layer's placeables lookup. */
 declare const canvas: {
-  tokens?: { get(id: string): TokenObject | undefined } | null;
+  scene?: { id: string } | null;
+  tokens?: {
+    get(id: string): TokenObject | undefined;
+    readonly controlled?: TokenObject[];
+  } | null;
   pan?(options: { x?: number; y?: number; scale?: number }): void;
 };
 

@@ -150,6 +150,10 @@ class FoundryDeathPort implements DeathPort {
   public warnRestoreNoCombat(): void {
     ui.notifications?.warn(game.i18n.localize("TACTICAL_INITIATIVE.Chat.RestoreNoCombat"));
   }
+
+  public warnRestoreNoToken(): void {
+    ui.notifications?.warn(game.i18n.localize("TACTICAL_INITIATIVE.Chat.RestoreNoToken"));
+  }
 }
 
 /** The resolver that turns an item UUID into a display name. */

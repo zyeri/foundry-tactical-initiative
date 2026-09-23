@@ -240,18 +240,19 @@ Run in a live v14 + dnd5e 5.3 world. Probes 1-2 gate the adapter behavior.
 
 v14 + dnd5e 5.3 only. **Probes first** (they gate the UI wiring):
 
-1. **Native group rendering.** Does the v14 combat tracker render `CombatantGroup` rows
-   natively? If so, style them; if not, the module's colored tag on each member row
-   (`decorateTrackerGroups` in `src/adapter/group-ui.ts`) is the fallback the checks below
-   assume.
+1. **Superseded in v1.5.0-rc2 (map grouping).** **Native group rendering.** Does the v14 combat
+   tracker render `CombatantGroup` rows natively? If so, style them; if not, the module's
+   colored tag on each member row (`decorateTrackerGroups`, removed in v1.5.0-rc2 from
+   `src/adapter/group-ui.ts`) is the fallback the checks below assume.
 2. **dnd5e group initiative.** Confirm dnd5e 5.3 `rollInitiative` does not fight the module
    setting each member's initiative explicitly, and that the native group `initiative`
    reflects the shared value. If not, read a member's initiative in `groupInitiativeValue`
    (`src/adapter/foundry-adapter.ts`).
-3. **Ctrl-select signal.** Determine how the tracker exposes a multi-selected set of rows to
-   a context action. `selectedCombatantIds` (`src/adapter/group-ui.ts`) reads a generous set
-   of candidate selectors and falls back to the single right-clicked row; confirm the real
-   selected-row class and narrow it.
+3. **Superseded in v1.5.0-rc2 (map grouping).** **Ctrl-select signal.** Determine how the tracker
+   exposes a multi-selected set of rows to a context action. `selectedCombatantIds` (removed
+   in v1.5.0-rc2 from `src/adapter/group-ui.ts`) read a generous set of candidate selectors and
+   fell back to the single right-clicked row; confirm the real selected-row class and narrow
+   it.
 4. **Rename/recolor dialog.** Rename/recolor use `foundry.applications.api.DialogV2.prompt`
    with an `ok` callback reading `button.form`. Confirm the callback receives the button and
    its form value in v14; adjust `DialogV2PromptButton` in `src/foundry-env.d.ts` if the
@@ -259,16 +260,18 @@ v14 + dnd5e 5.3 only. **Probes first** (they gate the UI wiring):
 
 Behavior checks:
 
-5. **Ctrl-select -> add to group.** Ctrl-select two or more tracker rows, right-click, pick
-   **Tactical: add to group**. Confirm a new group forms with those members.
+5. **Superseded in v1.5.0-rc2 (map grouping).** **Ctrl-select -> add to group.** Ctrl-select two
+   or more tracker rows, right-click, pick **Tactical: add to group**. Confirm a new group
+   forms with those members.
 6. **Shared initiative.** Start (or reroll) combat. Confirm every member of a group takes the
    same single initiative each round, with no per-tag prompt for grouped players.
 7. **Grouped boss single turn.** Group a Boss with mobs. Confirm the boss takes ONE turn at
    the group's initiative. Grouping an already-slotted boss now tears down its start/end
    double-turn entries immediately (cascade-safe); its initiative settles to the group's
    shared value on the next reroll.
-8. **Colored renameable tag.** Confirm each grouped row shows the colored group tag; **rename**
-   and **recolor** from the row's context menu update it on the next render.
+8. **Superseded in v1.5.0-rc2 (sidebar group rows are rendered by dnd5e).** **Colored renameable
+   tag.** Confirm each grouped row shows the colored group tag; **rename** and **recolor**
+   from the row's context menu update it on the next render.
 9. **Disband restores.** **Disband group** (or remove the last member). Confirm the members
    return to individual tag behavior on the next reroll.
 
@@ -305,16 +308,74 @@ are assumptions to confirm live.
 3. **Visibility.** As a player, GM-hidden combatants you do not own are absent; the GM sees
    all. HP shows as a bar (or hidden) for un-owned combatants per the "Player HP display"
    setting; full numbers for the GM and owners.
-4. **Groups.** A group renders as one cell with its color, `xN` count, and shared initiative;
-   clicking it opens the group HUD.
+4. **Groups.** Superseded in v1.5.0-rc2: see the map grouping checklist.
 5. **Interactions.** Click a portrait pans to and selects its token; double-click opens the
    sheet.
 6. **GM turn controls.** The controls (previous/next turn, next round, end combat, round
    number) appear only for the GM and drive the native combat.
 7. **Right-click menu.** Right-click a combatant row -> the same tag/group menu the sidebar
-   shows (tag as..., add to group, rename/recolor/disband, etc.).
+   shows (tag as..., rename/recolor/disband, etc.).
 
 If the bar never appears, check the DOM anchor (`#ui-top`) and the hook names in a v14 build.
+
+## Map grouping checklist (v1.5.0-rc2)
+
+v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
+
+1. **G with no combat.** On a scene with no combat, select 3 goblin tokens, press G. A
+   combat is created and activated; one group "Goblin" holds all three; the top bar shows
+   one stacked cell `x3`.
+2. **HUD button.** Right-click a wolf token, click the group icon in the HUD's left column.
+   A dialog offers a name (default "Wolf"), New group, and Join Goblin. A group named
+   `<b>x</b>` shows literally (not bolded) in the Join button.
+3. **Join mid-fight.** Start combat, then G a new goblin token and choose Join Goblin. It
+   enters the combat with the group's initiative; no tag prompt; no extra turn. Confirm
+   every member shows the same initiative (no split from the createCombatant hook).
+4. **Boss in a selection.** Group a Boss-tagged token: no stray end slot appears. Remove it
+   (HUD button -> Remove from group): its start/end double turn returns.
+5. **Spot removal empties a group.** Remove the last member of a group: the group
+   disappears from the top bar and the dnd5e sidebar.
+6. **Dismiss.** Press G with groups present, close the dialog: nothing changes.
+7. **Non-active GM.** With two GMs connected, the non-active GM presses G: grouping works.
+8. **One turn per group.** Next Turn from a group moves past all its members; Previous Turn
+   onto a group lands on its first member; Next Turn from the last group starts the next
+   round. The dnd5e sidebar shows the group as one collapsible row.
+9. **Group cell.** Click a group cell: a member list opens under it and stays open through
+   an HP change; clicking a member pans to it. Right-click: Rename, Recolor, Open HUD,
+   Disband all work. A defeated member dims in the list and the badge reads `x2/3`.
+10. **Menus fire.** Right-click a combatant cell -> Tactical: tag as Boss applies the tag.
+11. **A group that rolls highest keeps its turn at round start** (and a combat that is a
+    single group stays on round 1 until Next Turn).
+12. **Roll All mid-combat** while a group member is current does not advance the turn.
+13. **Resize.** Drag the grip at the bar's bottom-right corner down and up: portraits, badges,
+    HP bars, round label and turn buttons all scale together (32-128px). Change HP on a
+    combatant mid-drag: the drag continues. Reload: the size persists. Log in as the same user
+    on another browser: same size. Double-click the grip: back to 44px. Focus the grip (Tab)
+    and use ArrowUp/ArrowDown/Home. At 128px the current-turn portrait's count and condition
+    badges are not clipped at the top.
+14. **Size footprint.** At 128px with 10+ combatants the strip scrolls horizontally and does
+    not cover notifications or scene navigation.
+15. **Normal delete, no module prompt.** Delete an in-combat token (Delete key, confirm core's
+    dialog): the combatant disappears and NO "Combatants without a token" dialog appears.
+16. **Leftover sweep.** Force a leftover from the F12 console as GM on the viewed scene (a
+    combat must be active):
+    `const a = game.actors.contents[0]; await game.combat.createEmbeddedDocuments("Combatant", [{ tokenId: "tiFakeToken00001", sceneId: canvas.scene.id, actorId: a.id }]); Hooks.callAll("deleteToken", { id: "tiFakeToken00001", parent: { id: canvas.scene.id } }, {}, game.user.id);`
+    Within about a second the "Combatants without a token" dialog lists it. Also try to
+    reproduce the DM's original leftover (plain GM delete) and note the result in the spec's
+    P0 probe section. Remove: they leave the tracker. Keep: the portrait turns dashed with a
+    "?" and its tooltip says "token deleted"; the next round's reroll still gives everyone
+    else initiative. While a kept combatant exists, log
+    `game.combat.combatants.find(c => c.tokenId === 'tiFakeToken00001')?.actor` and note
+    whether it is null.
+17. **Boss delete.** Delete a Boss token: no end-slot entry survives (or, if one does, the
+    dialog offers it).
+18. **Multi-select delete.** Select 3 in-combat tokens and delete them together: their
+    combatants disappear and at most one "Combatants without a token" dialog appears (none if
+    core removed everything).
+19. **Player-initiated delete.** A player deletes a token they own that is in combat: the
+    combatant disappears on the GM's screen and the GM gets no module prompt.
+20. **Restore a deleted mob.** Kill a mob (F4 hides it and whispers Restore), delete its token,
+    then click Restore: a warning says the token no longer exists.
 
 ## Development
 

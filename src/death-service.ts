@@ -76,6 +76,8 @@ export interface DeathPort {
   addTokenToCombat(combatId: string, token: TokenRef): Promise<void>;
   /** Notify the GM that a restore target combat no longer exists. */
   warnRestoreNoCombat(): void;
+  /** Notify the GM that the token to restore no longer exists. */
+  warnRestoreNoToken(): void;
 }
 
 /**
@@ -131,7 +133,10 @@ export class DeathService {
    */
   public async restoreMob(tokenUuid: string, combatId: string): Promise<void> {
     const token = this.port.resolveToken(tokenUuid);
-    if (!token) return;
+    if (!token) {
+      this.port.warnRestoreNoToken();
+      return;
+    }
     await this.port.unhideToken(token);
     if (!this.port.combatExists(combatId)) {
       this.port.warnRestoreNoCombat();

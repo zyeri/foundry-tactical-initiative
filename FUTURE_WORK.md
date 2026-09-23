@@ -48,3 +48,6 @@ the manual checklist authoritative for the exact API seams (does `rollInitiative
 actually populate `initiative`? does dnd5e apply the AE bonus keys?). The harness is a
 regression net for the module's own logic, not a substitute for one smoke test in a
 live world per Foundry/dnd5e upgrade.
+
+- Sidebar group decoration was removed in v1.5.0-rc2: dnd5e 5.3 renders `CombatantGroup`s (2+
+  members) as collapsible rows itself. Revisit only if a replacement tracker needs it.

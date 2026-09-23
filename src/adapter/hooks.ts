@@ -6,6 +6,7 @@
  */
 
 import { FLAGS, MODULE_ID } from "../constants";
+import { groupIdOf } from "../logic/group";
 import { TacticalInitiative } from "../service";
 import { getPlayerTimeoutMs } from "../settings";
 import {
@@ -14,6 +15,7 @@ import {
   syncBossDefeat
 } from "./boss-slots";
 import { FoundryAdapter } from "./foundry-adapter";
+import { sweepEmptyGroup } from "./groups";
 import { readCombatantTag } from "./tags";
 
 /**
@@ -67,7 +69,11 @@ async function rollRoundOnce(combat: FoundryCombat): Promise<void> {
   lastRolledRound.set(combat.id, combat.round);
   await serviceFor(combat).rollForCombat(combat.id);
   // After clear+reroll the sort order changed; point the tracker at the new top.
-  await combat.update({ turn: 0 });
+  // Marked so the group-turns preUpdateCombat hook (src/adapter/group-turns.ts)
+  // never reads this reset as a navigation step - without the marker, a combat
+  // that is a single group and already sits at index 0 would misread this as a
+  // forward step off the end and call nextRound() again, looping forever.
+  await combat.update({ turn: 0 }, { [MODULE_ID]: { resetTurn: true } });
 }
 
 /**
@@ -108,7 +114,7 @@ export function registerHooks(): void {
     if (!combat) return;
     guard("createCombatant", async () => {
       const tag = readCombatantTag(combatant);
-      const grouped = typeof combatant.group === "string" && combatant.group.length > 0;
+      const grouped = groupIdOf(combatant) !== null;
       // A grouped combatant shares its group's initiative and gets no boss slots.
       if (tag === "boss" && !grouped) await setupBossCombatant(combatant, combat);
       // Mid-round join: grouped combatants and non-boss tags roll immediately;
@@ -131,7 +137,10 @@ export function registerHooks(): void {
     if (!isActiveGM()) return;
     const combat = combatant.combat;
     if (!combat) return;
-    guard("deleteCombatant", () => cleanupBossPairOnDelete(combatant, combat));
+    guard("deleteCombatant", async () => {
+      await cleanupBossPairOnDelete(combatant, combat);
+      await sweepEmptyGroup(combat, groupIdOf(combatant));
+    });
   });
 
   Hooks.on("deleteCombat", (combat: FoundryCombat): void => {

@@ -54,9 +54,15 @@ var SETTINGS = {
   /** World setting: whether the top-bar tracker is shown. */
   ENABLE_TOP_BAR: "enableTopBar",
   /** World setting: how non-owned HP is shown to players ("bar" | "none"). */
-  PLAYER_HP_POLICY: "playerHpPolicy"
+  PLAYER_HP_POLICY: "playerHpPolicy",
+  /** User setting (hidden): top-bar portrait size in px, set by the resize grip. */
+  TOP_BAR_SIZE: "topBarSize"
 };
 var DEFAULT_KILL_WINDOW_SECONDS = 45;
+var KEYBINDINGS = {
+  /** GM: group the controlled tokens (default G). */
+  GROUP_SELECTED: "groupSelected"
+};
 
 // src/logic/death.ts
 function crossedToZero(previousHp, newHp) {
@@ -170,7 +176,10 @@ var DeathService = class {
    */
   async restoreMob(tokenUuid, combatId) {
     const token = this.port.resolveToken(tokenUuid);
-    if (!token) return;
+    if (!token) {
+      this.port.warnRestoreNoToken();
+      return;
+    }
     await this.port.unhideToken(token);
     if (!this.port.combatExists(combatId)) {
       this.port.warnRestoreNoCombat();
@@ -211,6 +220,15 @@ var DeathService = class {
     await this.port.postPublic(this.port.localize(key, data));
   }
 };
+
+// src/logic/bar-size.ts
+var BAR_MIN = 32;
+var BAR_MAX = 128;
+var BAR_DEFAULT = 44;
+function clampBarSize(px) {
+  if (Number.isNaN(px)) return BAR_DEFAULT;
+  return Math.min(BAR_MAX, Math.max(BAR_MIN, Math.round(px)));
+}
 
 // src/settings.ts
 function registerSettings() {
@@ -260,6 +278,13 @@ function registerSettings() {
     },
     default: "bar"
   });
+  game.settings.register(MODULE_ID, SETTINGS.TOP_BAR_SIZE, {
+    name: "TACTICAL_INITIATIVE.Settings.TopBarSize.Name",
+    scope: "user",
+    config: false,
+    type: Number,
+    default: BAR_DEFAULT
+  });
 }
 function getPlayerTimeoutMs() {
   const raw = game.settings.get(MODULE_ID, SETTINGS.PLAYER_TIMEOUT);
@@ -275,11 +300,9 @@ function getKillWindowMs() {
   const seconds = typeof raw === "number" && Number.isFinite(raw) ? raw : DEFAULT_KILL_WINDOW_SECONDS;
   return Math.max(5, seconds) * 1e3;
 }
-
-// src/logic/boss.ts
-function bossSlotInitiative(slot, rank) {
-  const base = slot === "start" ? BOSS_START_BASE : BOSS_END_BASE;
-  return base - rank;
+function getTopBarSize() {
+  const raw = game.settings.get(MODULE_ID, SETTINGS.TOP_BAR_SIZE);
+  return clampBarSize(typeof raw === "number" ? raw : BAR_DEFAULT);
 }
 
 // src/logic/group.ts
@@ -301,6 +324,54 @@ function partitionByGroup(combatants) {
     group.members.push(combatant);
   }
   return { groups, ungrouped };
+}
+function groupIdOf(c) {
+  const raw = c._source?.group;
+  if (typeof raw === "string" && raw.length > 0) return raw;
+  const field = c.group;
+  if (typeof field === "string") return field.length > 0 ? field : null;
+  if (field && typeof field.id === "string" && field.id.length > 0) return field.id;
+  return null;
+}
+function resolveGroupChoice(selected, groups) {
+  if (selected.length === 0) return { kind: "none" };
+  if (groups.length === 0) return { kind: "create" };
+  return {
+    kind: "prompt",
+    options: [...groups],
+    offerRemove: selected.some((sel) => sel.groupId !== null)
+  };
+}
+function majorityName(names) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const raw of names) {
+    const name = raw.trim();
+    if (name.length === 0) continue;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  let best = null;
+  let bestCount = 0;
+  for (const [name, count] of counts) {
+    if (count > bestCount) {
+      best = name;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+function nextGroupName(existing, base) {
+  const taken = new Set(existing);
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base} ${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+// src/logic/boss.ts
+function bossSlotInitiative(slot, rank) {
+  const base = slot === "start" ? BOSS_START_BASE : BOSS_END_BASE;
+  return base - rank;
 }
 
 // src/logic/initiative.ts
@@ -462,7 +533,7 @@ function nextBossRank(combat) {
 async function setupBossCombatant(combatant, combat) {
   if (readCombatantTag(combatant) !== "boss") return;
   if (slotOf(combatant) !== null) return;
-  if (typeof combatant.group === "string" && combatant.group) return;
+  if (groupIdOf(combatant) !== null) return;
   const rank = nextBossRank(combat);
   await combatant.update({
     initiative: bossSlotInitiative("start", rank),
@@ -642,7 +713,7 @@ var FoundryAdapter = class {
     return game.actors?.get(actorId) ?? null;
   }
   async listCombatants(_combatId) {
-    return this.combat.combatants.contents.map((combatant) => {
+    return this.combat.combatants.contents.filter((combatant) => combatant.actor !== null).map((combatant) => {
       const slot = combatant.getFlag(MODULE_ID, FLAGS.BOSS_SLOT);
       const order = combatant.getFlag(MODULE_ID, FLAGS.BOSS_ORDER);
       const isBossSlot = slot === "start" || slot === "end";
@@ -654,7 +725,7 @@ var FoundryAdapter = class {
         isDefeated: combatant.isDefeated,
         bossSlot: isBossSlot ? slot : null,
         bossRank: isBossSlot && typeof order === "number" ? order : null,
-        groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null
+        groupId: groupIdOf(combatant)
       };
     });
   }
@@ -721,7 +792,7 @@ var FoundryAdapter = class {
   }
   async rollGroupInitiative(groupId) {
     const member = this.combat.combatants.find(
-      (c) => (typeof c.group === "string" ? c.group : null) === groupId
+      (c) => groupIdOf(c) === groupId && c.actor !== null
     );
     if (!member) return 0;
     const roll = this.buildInitiativeRoll(member);
@@ -733,6 +804,71 @@ var FoundryAdapter = class {
     return group && typeof group.initiative === "number" ? group.initiative : null;
   }
 };
+
+// src/adapter/groups.ts
+var DEFAULT_GROUP_COLOR = "#8888ff";
+async function removeFromGroup(combat, combatantIds) {
+  const affected = /* @__PURE__ */ new Set();
+  for (const id of combatantIds) {
+    const combatant = combat.combatants.get(id);
+    const group = combatant ? groupIdOf(combatant) : null;
+    if (group) affected.add(group);
+  }
+  await combat.updateEmbeddedDocuments(
+    "Combatant",
+    combatantIds.map((id) => ({ _id: id, group: null }))
+  );
+  for (const id of combatantIds) {
+    const combatant = combat.combatants.get(id);
+    if (combatant) await reconcileBossOnRetag(combatant, combat);
+  }
+  for (const groupId of affected) {
+    const stillHasMembers = combat.combatants.contents.some(
+      (c) => groupIdOf(c) === groupId
+    );
+    if (!stillHasMembers) await disbandGroup(combat, groupId);
+  }
+}
+async function renameGroup(combat, groupId, name) {
+  await combat.groups.get(groupId)?.update({ name });
+}
+async function recolorGroup(combat, groupId, color) {
+  await combat.groups.get(groupId)?.setFlag(MODULE_ID, FLAGS.GROUP_COLOR, color);
+}
+async function disbandGroup(combat, groupId) {
+  const memberIds = combat.combatants.contents.filter((c) => groupIdOf(c) === groupId).map((c) => c.id);
+  if (memberIds.length > 0) {
+    await combat.updateEmbeddedDocuments(
+      "Combatant",
+      memberIds.map((id) => ({ _id: id, group: null }))
+    );
+  }
+  for (const id of memberIds) {
+    const combatant = combat.combatants.get(id);
+    if (combatant) await reconcileBossOnRetag(combatant, combat);
+  }
+  await combat.deleteEmbeddedDocuments("CombatantGroup", [groupId]);
+}
+function groupColor(group) {
+  const color = group.getFlag(MODULE_ID, FLAGS.GROUP_COLOR);
+  return typeof color === "string" ? color : DEFAULT_GROUP_COLOR;
+}
+var sweepInFlight = /* @__PURE__ */ new Set();
+async function sweepEmptyGroup(combat, groupId) {
+  if (groupId === null) return;
+  if (!combat.groups.get(groupId)) return;
+  const key = `${combat.id}:${groupId}`;
+  if (sweepInFlight.has(key)) return;
+  sweepInFlight.add(key);
+  try {
+    const stillHasMembers = combat.combatants.contents.some((c) => groupIdOf(c) === groupId);
+    if (stillHasMembers) return;
+    if (!combat.groups.get(groupId)) return;
+    await combat.deleteEmbeddedDocuments("CombatantGroup", [groupId]);
+  } finally {
+    sweepInFlight.delete(key);
+  }
+}
 
 // src/adapter/hooks.ts
 function isActiveGM() {
@@ -752,7 +888,7 @@ async function rollRoundOnce(combat) {
   if (lastRolledRound.get(combat.id) === combat.round) return;
   lastRolledRound.set(combat.id, combat.round);
   await serviceFor(combat).rollForCombat(combat.id);
-  await combat.update({ turn: 0 });
+  await combat.update({ turn: 0 }, { [MODULE_ID]: { resetTurn: true } });
 }
 async function removeAllTempEffects(combat) {
   const seen = /* @__PURE__ */ new Set();
@@ -779,7 +915,7 @@ function registerHooks() {
     if (!combat) return;
     guard("createCombatant", async () => {
       const tag = readCombatantTag(combatant);
-      const grouped = typeof combatant.group === "string" && combatant.group.length > 0;
+      const grouped = groupIdOf(combatant) !== null;
       if (tag === "boss" && !grouped) await setupBossCombatant(combatant, combat);
       if (combat.started && (grouped || tag !== "boss")) {
         await serviceFor(combat).rollForCombatant(combat.id, combatant.id);
@@ -797,7 +933,10 @@ function registerHooks() {
     if (!isActiveGM()) return;
     const combat = combatant.combat;
     if (!combat) return;
-    guard("deleteCombatant", () => cleanupBossPairOnDelete(combatant, combat));
+    guard("deleteCombatant", async () => {
+      await cleanupBossPairOnDelete(combatant, combat);
+      await sweepEmptyGroup(combat, groupIdOf(combatant));
+    });
   });
   Hooks.on("deleteCombat", (combat) => {
     lastRolledRound.delete(combat.id);
@@ -915,6 +1054,9 @@ var FoundryDeathPort = class {
   warnRestoreNoCombat() {
     ui.notifications?.warn(game.i18n.localize("TACTICAL_INITIATIVE.Chat.RestoreNoCombat"));
   }
+  warnRestoreNoToken() {
+    ui.notifications?.warn(game.i18n.localize("TACTICAL_INITIATIVE.Chat.RestoreNoToken"));
+  }
 };
 function resolveItemName(itemUuid) {
   return fromUuidSync(itemUuid)?.name ?? null;
@@ -948,68 +1090,19 @@ function registerCombatEvents() {
   });
 }
 
-// src/adapter/groups.ts
-var DEFAULT_GROUP_COLOR = "#8888ff";
-async function addToGroup(combat, combatantIds, groupId) {
-  if (combatantIds.length === 0) return;
-  let targetId = groupId;
-  if (targetId === null) {
-    const name = game.i18n.format("TACTICAL_INITIATIVE.Group.DefaultName", {
-      n: String(combat.groups.size + 1)
-    });
-    const created = await combat.createEmbeddedDocuments("CombatantGroup", [
-      { name, flags: { [MODULE_ID]: { [FLAGS.GROUP_COLOR]: DEFAULT_GROUP_COLOR } } }
-    ]);
-    const group = created[0];
-    if (!group) return;
-    targetId = group.id;
-  }
-  await combat.updateEmbeddedDocuments(
-    "Combatant",
-    combatantIds.map((id) => ({ _id: id, group: targetId }))
+// src/ui/run-safe.ts
+var defaultReport = (label, error) => {
+  console.error(`tactical-initiative | ${label}`, error);
+  const notes = globalThis.ui?.notifications;
+  notes?.error?.(`Tactical Initiative: ${label} failed; see console (F12).`);
+};
+function runSafe(label, fn, report = defaultReport) {
+  return Promise.resolve().then(fn).then(
+    () => void 0,
+    (error) => {
+      report(label, error);
+    }
   );
-  for (const id of combatantIds) {
-    const combatant = combat.combatants.get(id);
-    if (combatant) await tearDownBossSlots(combatant, combat);
-  }
-}
-async function removeFromGroup(combat, combatantIds) {
-  const affected = /* @__PURE__ */ new Set();
-  for (const id of combatantIds) {
-    const combatant = combat.combatants.get(id);
-    const group = combatant && typeof combatant.group === "string" ? combatant.group : null;
-    if (group) affected.add(group);
-  }
-  await combat.updateEmbeddedDocuments(
-    "Combatant",
-    combatantIds.map((id) => ({ _id: id, group: null }))
-  );
-  for (const groupId of affected) {
-    const stillHasMembers = combat.combatants.contents.some(
-      (c) => (typeof c.group === "string" ? c.group : null) === groupId
-    );
-    if (!stillHasMembers) await disbandGroup(combat, groupId);
-  }
-}
-async function renameGroup(combat, groupId, name) {
-  await combat.groups.get(groupId)?.update({ name });
-}
-async function recolorGroup(combat, groupId, color) {
-  await combat.groups.get(groupId)?.setFlag(MODULE_ID, FLAGS.GROUP_COLOR, color);
-}
-async function disbandGroup(combat, groupId) {
-  const memberIds = combat.combatants.contents.filter((c) => (typeof c.group === "string" ? c.group : null) === groupId).map((c) => c.id);
-  if (memberIds.length > 0) {
-    await combat.updateEmbeddedDocuments(
-      "Combatant",
-      memberIds.map((id) => ({ _id: id, group: null }))
-    );
-  }
-  await combat.deleteEmbeddedDocuments("CombatantGroup", [groupId]);
-}
-function groupColor(group) {
-  const color = group.getFlag(MODULE_ID, FLAGS.GROUP_COLOR);
-  return typeof color === "string" ? color : DEFAULT_GROUP_COLOR;
 }
 
 // src/group-control-service.ts
@@ -1080,7 +1173,7 @@ var FoundryGroupControlPort = class {
    * @returns The member refs (empty for an unknown or empty group).
    */
   members(groupId) {
-    return this.combat.combatants.contents.filter((combatant) => (typeof combatant.group === "string" ? combatant.group : null) === groupId).map((combatant) => ({
+    return this.combat.combatants.contents.filter((combatant) => groupIdOf(combatant) === groupId).map((combatant) => ({
       combatantId: combatant.id,
       tokenId: combatant.tokenId,
       actorId: combatant.actorId ?? "",
@@ -1288,30 +1381,11 @@ function combatantIdFromTarget(target) {
   const id = element?.dataset["combatantId"];
   return typeof id === "string" ? id : null;
 }
-function selectedCombatantIds(target) {
-  const ids = /* @__PURE__ */ new Set();
-  const clicked = combatantIdFromTarget(target);
-  if (clicked) ids.add(clicked);
-  try {
-    const element = resolveElement(target);
-    const tracker = element?.closest("#combat, .combat-tracker, section.combat, [data-tab='combat']") ?? element?.ownerDocument.body ?? null;
-    const selected = tracker?.querySelectorAll(
-      ".combatant.selected, li.combatant[aria-selected='true'], .combatant.active-selection"
-    );
-    selected?.forEach((row) => {
-      const id = row.dataset["combatantId"];
-      if (typeof id === "string" && id.length > 0) ids.add(id);
-    });
-  } catch {
-  }
-  return [...ids];
-}
 function clickedGroupId(target) {
   const id = combatantIdFromTarget(target);
   if (!id) return null;
   const location = findCombatant(id);
-  const group = location && typeof location.combatant.group === "string" ? location.combatant.group : null;
-  return group && group.length > 0 ? group : null;
+  return location ? groupIdOf(location.combatant) : null;
 }
 function isGrouped(target) {
   return clickedGroupId(target) !== null;
@@ -1363,13 +1437,6 @@ async function promptForColor(current) {
     return null;
   }
 }
-async function addSelectionToNewGroup(target) {
-  const id = combatantIdFromTarget(target);
-  if (!id) return;
-  const location = findCombatant(id);
-  if (!location) return;
-  await addToGroup(location.combat, selectedCombatantIds(target), null);
-}
 async function removeClickedFromGroup(target) {
   const id = combatantIdFromTarget(target);
   if (!id) return;
@@ -1377,26 +1444,27 @@ async function removeClickedFromGroup(target) {
   if (!location) return;
   await removeFromGroup(location.combat, [id]);
 }
+async function renameGroupInteractive(combat, groupId) {
+  const current = combat.groups.get(groupId)?.name ?? "";
+  const name = await promptForText("TACTICAL_INITIATIVE.Group.Rename", current);
+  if (name !== null && name.length > 0) await renameGroup(combat, groupId, name);
+}
+async function recolorGroupInteractive(combat, groupId) {
+  const group = combat.groups.get(groupId);
+  const color = await promptForColor(group ? groupColor(group) : DEFAULT_GROUP_COLOR);
+  if (color !== null && color.length > 0) await recolorGroup(combat, groupId, color);
+}
 async function renameClickedGroup(target) {
   const id = combatantIdFromTarget(target);
   const groupId = clickedGroupId(target);
-  if (!id || !groupId) return;
-  const location = findCombatant(id);
-  if (!location) return;
-  const current = location.combat.groups.get(groupId)?.name ?? "";
-  const name = await promptForText("TACTICAL_INITIATIVE.Group.Rename", current);
-  if (name !== null && name.length > 0) await renameGroup(location.combat, groupId, name);
+  const location = id ? findCombatant(id) : null;
+  if (location && groupId) await renameGroupInteractive(location.combat, groupId);
 }
 async function recolorClickedGroup(target) {
   const id = combatantIdFromTarget(target);
   const groupId = clickedGroupId(target);
-  if (!id || !groupId) return;
-  const location = findCombatant(id);
-  if (!location) return;
-  const group = location.combat.groups.get(groupId);
-  const current = group ? groupColor(group) : DEFAULT_GROUP_COLOR;
-  const color = await promptForColor(current);
-  if (color !== null && color.length > 0) await recolorGroup(location.combat, groupId, color);
+  const location = id ? findCombatant(id) : null;
+  if (location && groupId) await recolorGroupInteractive(location.combat, groupId);
 }
 async function disbandClickedGroup(target) {
   const id = combatantIdFromTarget(target);
@@ -1408,14 +1476,6 @@ async function disbandClickedGroup(target) {
 }
 function pushGroupOptions(options) {
   const isGM = () => game.user?.isGM === true;
-  options.push({
-    name: game.i18n.localize("TACTICAL_INITIATIVE.Group.AddTo"),
-    icon: `<i class="fas fa-object-group"></i>`,
-    condition: () => isGM(),
-    callback: (target) => {
-      void addSelectionToNewGroup(target);
-    }
-  });
   options.push({
     name: game.i18n.localize("TACTICAL_INITIATIVE.HUD.Open"),
     icon: `<i class="fas fa-gauge-high"></i>`,
@@ -1429,7 +1489,7 @@ function pushGroupOptions(options) {
     icon: `<i class="fas fa-object-ungroup"></i>`,
     condition: (target) => isGM() && isGrouped(target),
     callback: (target) => {
-      void removeClickedFromGroup(target);
+      void runSafe("remove from group", () => removeClickedFromGroup(target));
     }
   });
   options.push({
@@ -1437,7 +1497,7 @@ function pushGroupOptions(options) {
     icon: `<i class="fas fa-pen"></i>`,
     condition: (target) => isGM() && isGrouped(target),
     callback: (target) => {
-      void renameClickedGroup(target);
+      void runSafe("rename group", () => renameClickedGroup(target));
     }
   });
   options.push({
@@ -1445,7 +1505,7 @@ function pushGroupOptions(options) {
     icon: `<i class="fas fa-palette"></i>`,
     condition: (target) => isGM() && isGrouped(target),
     callback: (target) => {
-      void recolorClickedGroup(target);
+      void runSafe("recolor group", () => recolorClickedGroup(target));
     }
   });
   options.push({
@@ -1453,7 +1513,7 @@ function pushGroupOptions(options) {
     icon: `<i class="fas fa-users-slash"></i>`,
     condition: (target) => isGM() && isGrouped(target),
     callback: (target) => {
-      void disbandClickedGroup(target);
+      void runSafe("disband group", () => disbandClickedGroup(target));
     }
   });
 }
@@ -1485,31 +1545,6 @@ function tryPatchTracker() {
     return false;
   }
 }
-function decorateTrackerGroups(root) {
-  try {
-    const combat = game.combats?.active ?? null;
-    if (!combat) return;
-    const rows = root.querySelectorAll(".combatant[data-combatant-id]");
-    rows.forEach((row) => {
-      const id = row.dataset["combatantId"];
-      if (typeof id !== "string" || id.length === 0) return;
-      const combatant = combat.combatants.get(id);
-      const groupId = combatant && typeof combatant.group === "string" ? combatant.group : null;
-      if (!groupId || groupId.length === 0) return;
-      const group = combat.groups.get(groupId);
-      if (!group) return;
-      if (row.querySelector(`.${MODULE_ID}-group-tag`)) return;
-      const tag = document.createElement("span");
-      tag.className = `${MODULE_ID}-group-tag`;
-      tag.textContent = group.name;
-      tag.title = group.name;
-      tag.style.backgroundColor = groupColor(group);
-      const anchor = row.querySelector(".token-name, .combatant-name, .name") ?? row;
-      anchor.appendChild(tag);
-    });
-  } catch {
-  }
-}
 function registerGroupUI() {
   Hooks.once("ready", () => {
     if (tryPatchTracker()) return;
@@ -1517,10 +1552,404 @@ function registerGroupUI() {
       pushGroupOptions(options);
     });
   });
-  Hooks.on("renderCombatTracker", (_app, html) => {
-    const root = resolveElement(html);
-    if (root) decorateTrackerGroups(root);
+}
+
+// src/grouping-service.ts
+var GroupingService = class {
+  /**
+   * @param port - The Foundry seam.
+   */
+  constructor(port) {
+    this.port = port;
+  }
+  /**
+   * Group the given tokens: add missing ones to combat, then create, join, or
+   * leave a group per {@link resolveGroupChoice} and the GM's dialog answer.
+   *
+   * @param tokenIds - Selected token ids (duplicates allowed).
+   */
+  async groupSelected(tokenIds) {
+    const unique = [...new Set(tokenIds)];
+    if (unique.length === 0) {
+      this.port.warn("NothingSelected");
+      return;
+    }
+    const combatId = await this.port.resolveCombat();
+    if (combatId === null) {
+      this.port.warn("NoScene");
+      return;
+    }
+    const before = this.port.listCombatants(combatId);
+    const byToken = /* @__PURE__ */ new Map();
+    for (const combatant of before) {
+      if (combatant.bossEndSlot || combatant.tokenId === null) continue;
+      if (!unique.includes(combatant.tokenId) || byToken.has(combatant.tokenId)) continue;
+      byToken.set(combatant.tokenId, combatant);
+    }
+    const inCombat = [...byToken.values()];
+    const newTokens = unique.filter((tokenId) => !byToken.has(tokenId));
+    const selected = [
+      ...inCombat.map((c) => ({ combatantId: c.id, groupId: c.groupId })),
+      ...newTokens.map(() => ({ combatantId: null, groupId: null }))
+    ];
+    const groups = this.port.listGroups(combatId);
+    const choice = resolveGroupChoice(selected, groups);
+    if (choice.kind === "none") return;
+    const base = majorityName(this.port.tokenActorNames(unique)) ?? this.port.fallbackGroupName();
+    const defaultName = nextGroupName(
+      groups.map((group) => group.name),
+      base
+    );
+    const result = choice.kind === "create" ? { action: "new", name: defaultName } : await this.port.prompt({ options: choice.options, offerRemove: choice.offerRemove, defaultName });
+    if (result === null) return;
+    if (result.action === "remove") {
+      await this.leave(
+        combatId,
+        inCombat.filter((c) => c.groupId !== null)
+      );
+      return;
+    }
+    const targetId = result.action === "join" ? result.groupId : await this.port.createGroup(combatId, result.name.trim() || defaultName);
+    await this.join(combatId, before, inCombat, newTokens, targetId);
+  }
+  /** Put selected combatants and new tokens into `targetId`, then settle initiative. */
+  async join(combatId, before, inCombat, newTokens, targetId) {
+    const started = this.port.isStarted(combatId);
+    const shared = started ? before.find((c) => c.groupId === targetId && c.initiative !== null)?.initiative ?? null : null;
+    const moving = inCombat.filter((c) => c.groupId !== targetId).map((c) => c.id);
+    if (moving.length > 0) {
+      await this.port.assign(combatId, moving, targetId, shared);
+      await this.port.tearDownBoss(combatId, moving);
+    }
+    if (newTokens.length > 0) await this.port.createCombatants(combatId, newTokens, targetId, shared);
+    if (started && shared === null && (moving.length > 0 || newTokens.length > 0)) {
+      const value = await this.port.rollGroupInitiative(combatId, targetId);
+      if (value !== null) {
+        const members = this.port.listCombatants(combatId).filter((c) => c.groupId === targetId).map((c) => c.id);
+        await this.port.setInitiative(combatId, members, value);
+      }
+    }
+    await this.sweep(
+      combatId,
+      inCombat.map((c) => c.groupId)
+    );
+  }
+  /** Remove combatants from their groups and restore their boss slots. */
+  async leave(combatId, refs) {
+    if (refs.length === 0) return;
+    const ids = refs.map((ref) => ref.id);
+    await this.port.unassign(combatId, ids);
+    await this.port.reconcileBoss(combatId, ids);
+    await this.sweep(
+      combatId,
+      refs.map((ref) => ref.groupId)
+    );
+  }
+  /** Delete any candidate group that no longer has members. */
+  async sweep(combatId, candidates2) {
+    const used = new Set(this.port.listCombatants(combatId).map((c) => c.groupId));
+    for (const groupId of new Set(candidates2)) {
+      if (groupId !== null && !used.has(groupId)) await this.port.deleteGroup(combatId, groupId);
+    }
+  }
+};
+
+// src/adapter/grouping.ts
+function combatClass() {
+  return CONFIG.Combat.documentClass;
+}
+function escapeHtml2(value) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function readName(button) {
+  const field = button.form?.elements.namedItem("name");
+  return field instanceof HTMLInputElement ? field.value : "";
+}
+var FoundryGroupingPort = class {
+  /** Resolve a combat by id or throw (ids come from resolveCombat). */
+  combat(combatId) {
+    const combat = game.combats?.get(combatId);
+    if (!combat) throw new Error(`combat ${combatId} not found`);
+    return combat;
+  }
+  async resolveCombat() {
+    const sceneId = canvas.scene?.id ?? null;
+    if (sceneId === null) return null;
+    const viewed = game.combat ?? null;
+    let combat = viewed && (viewed.scene === null || viewed.scene.id === sceneId) ? viewed : null;
+    combat ??= game.combats?.find((c) => c.scene?.id === sceneId) ?? null;
+    combat ??= await combatClass().create({ scene: sceneId, active: true });
+    if (!combat.active) await combat.activate();
+    return combat.id;
+  }
+  listCombatants(combatId) {
+    return this.combat(combatId).combatants.contents.map((c) => ({
+      id: c.id,
+      tokenId: c.tokenId,
+      groupId: groupIdOf(c),
+      initiative: c.initiative,
+      bossEndSlot: c.getFlag(MODULE_ID, FLAGS.BOSS_SLOT) === "end"
+    }));
+  }
+  listGroups(combatId) {
+    return this.combat(combatId).groups.contents.map((g) => ({ id: g.id, name: g.name, color: groupColor(g) }));
+  }
+  isStarted(combatId) {
+    return this.combat(combatId).started;
+  }
+  tokenActorNames(tokenIds) {
+    return tokenIds.map((id) => {
+      const doc = canvas.tokens?.get(id)?.document;
+      return doc?.actor?.name ?? doc?.name ?? "";
+    });
+  }
+  fallbackGroupName() {
+    return game.i18n.localize("TACTICAL_INITIATIVE.Group.FallbackName");
+  }
+  async createGroup(combatId, name) {
+    const created = await this.combat(combatId).createEmbeddedDocuments("CombatantGroup", [
+      { name, flags: { [MODULE_ID]: { [FLAGS.GROUP_COLOR]: DEFAULT_GROUP_COLOR } } }
+    ]);
+    const group = created[0];
+    if (!group) throw new Error("CombatantGroup was not created");
+    return group.id;
+  }
+  async createCombatants(combatId, tokenIds, groupId, initiative) {
+    const sceneId = canvas.scene?.id ?? null;
+    const data = tokenIds.flatMap((tokenId) => {
+      const doc = canvas.tokens?.get(tokenId)?.document;
+      if (!doc) return [];
+      return [
+        {
+          tokenId,
+          sceneId,
+          actorId: doc.actorId,
+          hidden: doc.hidden === true,
+          group: groupId,
+          ...initiative !== null ? { initiative } : {}
+        }
+      ];
+    });
+    if (data.length === 0) return [];
+    const created = await this.combat(combatId).createEmbeddedDocuments("Combatant", data);
+    return created.map((c) => c.id);
+  }
+  async assign(combatId, ids, groupId, initiative) {
+    await this.combat(combatId).updateEmbeddedDocuments(
+      "Combatant",
+      ids.map((id) => ({ _id: id, group: groupId, ...initiative !== null ? { initiative } : {} }))
+    );
+  }
+  async unassign(combatId, ids) {
+    await this.combat(combatId).updateEmbeddedDocuments(
+      "Combatant",
+      ids.map((id) => ({ _id: id, group: null }))
+    );
+  }
+  async deleteGroup(combatId, groupId) {
+    const combat = this.combat(combatId);
+    if (combat.groups.get(groupId)) await combat.deleteEmbeddedDocuments("CombatantGroup", [groupId]);
+  }
+  async rollGroupInitiative(combatId, groupId) {
+    const combat = this.combat(combatId);
+    const hasMember = combat.combatants.contents.some((c) => groupIdOf(c) === groupId);
+    if (!hasMember) return null;
+    return new FoundryAdapter(combat, getPlayerTimeoutMs()).rollGroupInitiative(groupId);
+  }
+  async setInitiative(combatId, ids, value) {
+    await this.combat(combatId).updateEmbeddedDocuments(
+      "Combatant",
+      ids.map((id) => ({ _id: id, initiative: value }))
+    );
+  }
+  async tearDownBoss(combatId, ids) {
+    const combat = this.combat(combatId);
+    for (const id of ids) {
+      const combatant = combat.combatants.get(id);
+      if (combatant) await tearDownBossSlots(combatant, combat);
+    }
+  }
+  async reconcileBoss(combatId, ids) {
+    const combat = this.combat(combatId);
+    for (const id of ids) {
+      const combatant = combat.combatants.get(id);
+      if (combatant) await reconcileBossOnRetag(combatant, combat);
+    }
+  }
+  async prompt(request) {
+    const legend = request.options.map(
+      (g) => `<li><span style="display:inline-block;width:0.8em;height:0.8em;border-radius:50%;background:${escapeHtml2(
+        g.color ?? DEFAULT_GROUP_COLOR
+      )}"></span> ${escapeHtml2(g.name)}</li>`
+    ).join("");
+    const content = `<label>${escapeHtml2(game.i18n.localize("TACTICAL_INITIATIVE.Grouping.NameLabel"))} <input type="text" name="name" value="${escapeHtml2(request.defaultName)}" autofocus></label><p>${escapeHtml2(game.i18n.localize("TACTICAL_INITIATIVE.Grouping.Existing"))}</p><ul>${legend}</ul>`;
+    const buttons = [
+      {
+        action: "new",
+        label: game.i18n.localize("TACTICAL_INITIATIVE.Grouping.NewGroup"),
+        default: true,
+        callback: (_event, button) => ({ action: "new", name: readName(button) })
+      },
+      ...request.options.map(
+        (g) => ({
+          action: `join-${g.id}`,
+          label: game.i18n.format("TACTICAL_INITIATIVE.Grouping.Join", { name: escapeHtml2(g.name) }),
+          callback: () => ({ action: "join", groupId: g.id })
+        })
+      )
+    ];
+    if (request.offerRemove) {
+      buttons.push({
+        action: "remove",
+        label: game.i18n.localize("TACTICAL_INITIATIVE.Grouping.RemoveFromGroup"),
+        callback: () => ({ action: "remove" })
+      });
+    }
+    const result = await foundry.applications.api.DialogV2.wait({
+      window: { title: game.i18n.localize("TACTICAL_INITIATIVE.Grouping.DialogTitle") },
+      content,
+      buttons,
+      rejectClose: false,
+      modal: true
+    });
+    return result && typeof result === "object" && "action" in result ? result : null;
+  }
+  warn(key) {
+    ui.notifications?.warn(game.i18n.localize(`TACTICAL_INITIATIVE.Grouping.${key}`));
+  }
+};
+
+// src/adapter/grouping-ui.ts
+async function groupSelectedTokens(extraTokenId) {
+  if (game.user?.isGM !== true) return;
+  const ids = (canvas.tokens?.controlled ?? []).map((token) => token.id);
+  if (extraTokenId) ids.push(extraTokenId);
+  await new GroupingService(new FoundryGroupingPort()).groupSelected(ids);
+}
+function registerGroupingKeybinding() {
+  game.keybindings.register(MODULE_ID, KEYBINDINGS.GROUP_SELECTED, {
+    name: "TACTICAL_INITIATIVE.Grouping.KeyName",
+    hint: "TACTICAL_INITIATIVE.Grouping.KeyHint",
+    editable: [{ key: "KeyG" }],
+    restricted: true,
+    onDown: () => {
+      void runSafe("group selected", () => groupSelectedTokens());
+      return true;
+    }
   });
+}
+function registerTokenHudButton() {
+  Hooks.on("renderTokenHUD", (app, html) => {
+    if (game.user?.isGM !== true) return;
+    const root = html instanceof HTMLElement ? html : html?.[0];
+    if (!(root instanceof HTMLElement)) return;
+    const column = root.querySelector(".col.left");
+    if (!column || column.querySelector(`.${MODULE_ID}-group-btn`)) return;
+    const tokenId = app.object?.id;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `control-icon ${MODULE_ID}-group-btn`;
+    button.title = game.i18n.localize("TACTICAL_INITIATIVE.Grouping.HudButton");
+    const icon = document.createElement("i");
+    icon.className = "fas fa-object-group";
+    button.appendChild(icon);
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void runSafe("group selected", () => groupSelectedTokens(tokenId));
+    });
+    column.appendChild(button);
+  });
+}
+
+// src/logic/turns.ts
+function adjustTurn(turns, from, to, direction, skipDefeated) {
+  if (from === null || to < 0 || to >= turns.length) return { kind: "keep" };
+  if (to === from) return { kind: "keep" };
+  if (direction === 1) {
+    const groupId2 = turns[from]?.groupId ?? null;
+    if (groupId2 === null) return { kind: "keep" };
+    let index2 = to;
+    while (index2 < turns.length) {
+      const entry = turns[index2];
+      if (!entry) break;
+      const sameGroup = entry.groupId === groupId2;
+      const skippable = skipDefeated && entry.defeated;
+      if (!sameGroup && !skippable) break;
+      index2 += 1;
+    }
+    if (index2 >= turns.length) return { kind: "nextRound" };
+    return index2 === to ? { kind: "keep" } : { kind: "set", turn: index2 };
+  }
+  const groupId = turns[to]?.groupId ?? null;
+  if (groupId === null) return { kind: "keep" };
+  let index = to;
+  while (index > 0 && turns[index - 1]?.groupId === groupId) index -= 1;
+  return index === to ? { kind: "keep" } : { kind: "set", turn: index };
+}
+function groupTieBreak(a, b) {
+  if (a.initiative === null || b.initiative === null || a.initiative !== b.initiative) return 0;
+  const keyA = a.groupId ?? "";
+  const keyB = b.groupId ?? "";
+  if (keyA === keyB) return 0;
+  return keyA < keyB ? -1 : 1;
+}
+
+// src/adapter/group-turns.ts
+var SORT_PATCHED = "__tacticalInitiativeGroupSortPatched";
+function patchSort() {
+  const proto = CONFIG.Combat?.documentClass?.prototype;
+  if (!proto || proto[SORT_PATCHED] === true) return;
+  const original = proto["_sortCombatants"];
+  if (typeof original !== "function") {
+    console.warn(`${MODULE_ID} | Combat#_sortCombatants not found; group members may interleave on ties`);
+    return;
+  }
+  const sort = original;
+  proto["_sortCombatants"] = function(a, b) {
+    const tie = groupTieBreak(
+      { initiative: a.initiative, groupId: groupIdOf(a) },
+      { initiative: b.initiative, groupId: groupIdOf(b) }
+    );
+    return tie !== 0 ? tie : sort.call(this, a, b);
+  };
+  proto[SORT_PATCHED] = true;
+}
+function registerGroupTurns() {
+  Hooks.once("setup", patchSort);
+  Hooks.on(
+    "preUpdateCombat",
+    (combat, changes, options) => {
+      if (typeof changes.turn !== "number") return;
+      if (typeof changes.round === "number" && changes.round > combat.round) return;
+      const marker = options[MODULE_ID];
+      if (marker && typeof marker === "object" && marker.resetTurn === true) return;
+      const from = combat.turn;
+      let direction;
+      if (options.direction === -1 || options.direction === 1) {
+        direction = options.direction;
+      } else if (changes.turn === (from ?? -1) + 1) {
+        direction = 1;
+      } else if (changes.turn === (from ?? -1) - 1) {
+        direction = -1;
+      } else {
+        return;
+      }
+      const turns = combat.turns.map((c) => ({
+        id: c.id,
+        groupId: groupIdOf(c),
+        defeated: c.isDefeated
+      }));
+      const result = adjustTurn(turns, from, changes.turn, direction, combat.settings?.skipDefeated === true);
+      if (result.kind === "set") changes.turn = result.turn;
+      if (result.kind === "nextRound") {
+        guard("group next round", async () => {
+          await combat.nextRound();
+        });
+        return false;
+      }
+    }
+  );
 }
 
 // src/logic/tracker-view.ts
@@ -1550,14 +1979,24 @@ function buildTrackerView(input, viewer2) {
         (other) => other.groupId === combatant.groupId && isVisible(other, viewer2)
       );
       const group = meta.get(combatant.groupId);
+      const alive = members.filter((member) => !member.isDefeated);
+      const portraits = (alive.length > 0 ? alive : members).map((member) => member.img).filter((img) => img !== null).slice(0, 3);
       rows.push({
         kind: "group",
         groupId: combatant.groupId,
         name: group?.name ?? "",
         color: group?.color ?? DEFAULT_GROUP_COLOR2,
         memberCount: members.length,
+        living: alive.length,
         initiative: combatant.initiative,
-        img: members[0]?.img ?? null,
+        img: portraits[0] ?? null,
+        portraits,
+        members: members.map((member) => ({
+          id: member.id,
+          name: member.name,
+          img: member.img,
+          defeated: member.isDefeated
+        })),
         isCurrent: members.some((member) => member.id === input.currentId)
       });
     } else {
@@ -1571,7 +2010,8 @@ function buildTrackerView(input, viewer2) {
         hp: hpFor(combatant, viewer2),
         conditions: combatant.conditions,
         isCurrent: combatant.id === input.currentId,
-        isDefeated: combatant.isDefeated
+        isDefeated: combatant.isDefeated,
+        tokenMissing: combatant.tokenMissing
       });
     }
   }
@@ -1725,6 +2165,130 @@ function capitalize(tag) {
   return `${tag.charAt(0).toUpperCase()}${tag.slice(1)}`;
 }
 
+// src/ui/grip.ts
+function attachGrip(grip, options) {
+  let dragging = false;
+  let activePointer = null;
+  let startY = 0;
+  let startSize = 0;
+  let current = 0;
+  grip.setAttribute("role", "separator");
+  grip.setAttribute("aria-orientation", "horizontal");
+  grip.setAttribute("aria-valuemin", String(options.min));
+  grip.setAttribute("aria-valuemax", String(options.max));
+  grip.setAttribute("aria-valuenow", String(options.read()));
+  grip.tabIndex = 0;
+  const apply = (px) => {
+    options.preview(px);
+    grip.setAttribute("aria-valuenow", String(px));
+  };
+  const set = (px) => {
+    const next = options.clamp(px);
+    const before = options.read();
+    apply(next);
+    if (next !== before) options.commit(next);
+  };
+  const onDown = (event) => {
+    if (dragging) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragging = true;
+    activePointer = event.pointerId;
+    startY = event.clientY;
+    startSize = options.read();
+    current = startSize;
+    if (typeof grip.setPointerCapture === "function") {
+      try {
+        grip.setPointerCapture(event.pointerId);
+      } catch {
+      }
+    }
+  };
+  const onMove = (event) => {
+    if (!dragging || event.pointerId !== activePointer) return;
+    current = options.clamp(startSize + (event.clientY - startY));
+    apply(current);
+  };
+  const onEnd = (event) => {
+    if (!dragging) return;
+    const pointerEvent = event;
+    if (pointerEvent?.pointerId !== void 0 && pointerEvent.pointerId !== activePointer) return;
+    dragging = false;
+    activePointer = null;
+    if (current !== startSize) options.commit(current);
+  };
+  const onDblClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragging = false;
+    activePointer = null;
+    set(options.defaultSize);
+  };
+  const onKey = (event) => {
+    if (event.key === "ArrowDown") set(options.read() + options.step);
+    else if (event.key === "ArrowUp") set(options.read() - options.step);
+    else if (event.key === "Home") set(options.defaultSize);
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  grip.addEventListener("pointerdown", onDown);
+  grip.addEventListener("pointermove", onMove);
+  grip.addEventListener("pointerup", onEnd);
+  grip.addEventListener("pointercancel", onEnd);
+  grip.addEventListener("lostpointercapture", onEnd);
+  grip.addEventListener("dblclick", onDblClick);
+  grip.addEventListener("keydown", onKey);
+  return () => {
+    grip.removeEventListener("pointerdown", onDown);
+    grip.removeEventListener("pointermove", onMove);
+    grip.removeEventListener("pointerup", onEnd);
+    grip.removeEventListener("pointercancel", onEnd);
+    grip.removeEventListener("lostpointercapture", onEnd);
+    grip.removeEventListener("dblclick", onDblClick);
+    grip.removeEventListener("keydown", onKey);
+  };
+}
+
+// src/ui/menu.ts
+var outsideListeners = /* @__PURE__ */ new Map();
+function closeMenu(doc, id) {
+  const listener = outsideListeners.get(id);
+  if (listener) {
+    doc.removeEventListener("pointerdown", listener, true);
+    outsideListeners.delete(id);
+  }
+  doc.getElementById(id)?.remove();
+}
+function openMenu(doc, id, className, items, x, y, report) {
+  closeMenu(doc, id);
+  if (items.length === 0) return null;
+  const menu = doc.createElement("nav");
+  menu.id = id;
+  menu.className = className;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  for (const entry of items) {
+    const button = doc.createElement("button");
+    button.type = "button";
+    button.className = `${className}-item`;
+    button.textContent = entry.label;
+    button.addEventListener("click", () => {
+      closeMenu(doc, id);
+      void runSafe(`menu:${entry.label}`, entry.run, report);
+    });
+    menu.appendChild(button);
+  }
+  const outside = (event) => {
+    if (event.target instanceof Node && menu.contains(event.target)) return;
+    closeMenu(doc, id);
+  };
+  outsideListeners.set(id, outside);
+  doc.addEventListener("pointerdown", outside, true);
+  doc.body.appendChild(menu);
+  return menu;
+}
+
 // src/adapter/top-bar.ts
 var CONTAINER_ID = `${MODULE_ID}-top-bar`;
 function enabled() {
@@ -1747,12 +2311,13 @@ function toCombatant(combatant) {
     img: combatant.img ?? null,
     initiative: combatant.initiative,
     tag: readCombatantTag(combatant),
-    groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null,
+    groupId: groupIdOf(combatant),
     hidden: combatant.hidden,
     isDefeated: combatant.isDefeated,
     ownedByViewer: owned,
     hp: { value: typeof hp?.value === "number" ? hp.value : null, max: typeof hp?.max === "number" ? hp.max : null },
-    conditions: actor?.statuses ? [...actor.statuses] : []
+    conditions: actor?.statuses ? [...actor.statuses] : [],
+    tokenMissing: combatant.sceneId !== null && combatant.tokenId !== null && game.scenes?.get(combatant.sceneId)?.tokens.has(combatant.tokenId) === false
   };
 }
 function toInput(combat) {
@@ -1762,14 +2327,43 @@ function toInput(combat) {
     currentId: combat.combatant?.id ?? null
   };
 }
+var STRIP_CLASS = `${MODULE_ID}-tb-strip`;
+var barSize = BAR_DEFAULT;
+function applySize(bar, px) {
+  bar.style.setProperty("--ti-portrait", `${px}px`);
+}
 function container() {
   const existing = document.getElementById(CONTAINER_ID);
-  if (existing) return existing;
-  const element = document.createElement("div");
-  element.id = CONTAINER_ID;
-  element.className = `${MODULE_ID}-top-bar`;
-  (document.getElementById("ui-top") ?? document.body).appendChild(element);
-  return element;
+  const existingStrip = existing?.querySelector(`.${STRIP_CLASS}`);
+  if (existing && existingStrip) return { bar: existing, strip: existingStrip };
+  const bar = document.createElement("div");
+  bar.id = CONTAINER_ID;
+  bar.className = `${MODULE_ID}-top-bar`;
+  const strip = document.createElement("div");
+  strip.className = STRIP_CLASS;
+  const grip = document.createElement("div");
+  grip.className = `${MODULE_ID}-tb-grip`;
+  grip.title = game.i18n.localize("TACTICAL_INITIATIVE.Tracker.ResizeGrip");
+  bar.append(strip, grip);
+  barSize = getTopBarSize();
+  applySize(bar, barSize);
+  attachGrip(grip, {
+    read: () => barSize,
+    preview: (px) => {
+      barSize = px;
+      applySize(bar, px);
+    },
+    commit: (px) => {
+      void runSafe("top-bar size", () => game.settings.set(MODULE_ID, SETTINGS.TOP_BAR_SIZE, px));
+    },
+    clamp: clampBarSize,
+    min: BAR_MIN,
+    max: BAR_MAX,
+    defaultSize: BAR_DEFAULT,
+    step: 4
+  });
+  (document.getElementById("ui-top") ?? document.body).appendChild(bar);
+  return { bar, strip };
 }
 function focusToken(combatantId) {
   const location = findCombatant(combatantId);
@@ -1782,44 +2376,67 @@ function focusToken(combatantId) {
 function openSheet(combatantId) {
   findCombatant(combatantId)?.combatant.actor?.sheet?.render(true);
 }
-function closeMenu() {
-  document.getElementById(`${MODULE_ID}-tb-menu`)?.remove();
-}
-function openMenu(rowEl, x, y) {
-  closeMenu();
+var MENU_ID = `${MODULE_ID}-tb-menu`;
+var MENU_CLASS = `${MODULE_ID}-tb-menu`;
+function openCombatantMenu(rowEl, x, y) {
   const entries = [];
   pushTagOptions(entries);
   pushGroupOptions(entries);
-  const visible = entries.filter((entry) => {
+  const items = entries.filter((entry) => {
     try {
       return entry.condition(rowEl);
     } catch {
       return false;
     }
-  });
-  if (visible.length === 0) return;
-  const menu = document.createElement("nav");
-  menu.id = `${MODULE_ID}-tb-menu`;
-  menu.className = `${MODULE_ID}-tb-menu`;
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
-  for (const entry of visible) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = `${MODULE_ID}-tb-menu-item`;
-    item.textContent = entry.name;
-    item.addEventListener("click", () => {
-      closeMenu();
-      try {
-        entry.callback(rowEl);
-      } catch (error) {
-        console.error(`${MODULE_ID} | top-bar menu`, error);
+  }).map((entry) => ({ label: entry.name, run: () => entry.callback(rowEl) }));
+  openMenu(document, MENU_ID, MENU_CLASS, items, x, y);
+}
+var expandedGroups = /* @__PURE__ */ new Set();
+var POPOVER_CLASS = `${MODULE_ID}-tb-members`;
+function openGroupMenu(groupId, x, y) {
+  const combat = game.combats?.active ?? null;
+  if (!combat || game.user?.isGM !== true) return;
+  const items = [
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.Group.Rename"), run: () => renameGroupInteractive(combat, groupId) },
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.Group.Recolor"), run: () => recolorGroupInteractive(combat, groupId) },
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.HUD.Open"), run: () => openGroupHud(combat, groupId) },
+    { label: game.i18n.localize("TACTICAL_INITIATIVE.Group.Disband"), run: () => disbandGroup(combat, groupId) }
+  ];
+  openMenu(document, MENU_ID, MENU_CLASS, items, x, y);
+}
+function renderPopovers(bar, rows) {
+  document.querySelectorAll(`.${POPOVER_CLASS}`).forEach((el) => el.remove());
+  const present = new Set(rows.flatMap((row) => row.kind === "group" ? [row.groupId] : []));
+  for (const id of [...expandedGroups]) if (!present.has(id)) expandedGroups.delete(id);
+  for (const row of rows) {
+    if (row.kind !== "group" || !expandedGroups.has(row.groupId)) continue;
+    const cell = bar.querySelector(`[data-group-id="${row.groupId}"]`);
+    if (!cell) continue;
+    const rect = cell.getBoundingClientRect();
+    const pop = document.createElement("div");
+    pop.className = POPOVER_CLASS;
+    pop.style.left = `${rect.left}px`;
+    pop.style.top = `${rect.bottom + 4}px`;
+    pop.style.borderColor = row.color;
+    for (const member of row.members) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `${POPOVER_CLASS}-item`;
+      if (member.defeated) button.classList.add(`${MODULE_ID}-tb-defeated`);
+      if (member.img) {
+        const img = document.createElement("img");
+        img.src = member.img;
+        img.alt = "";
+        button.appendChild(img);
       }
-    });
-    menu.appendChild(item);
+      button.appendChild(document.createTextNode(member.name));
+      button.addEventListener("click", () => {
+        focusToken(member.id);
+      });
+      pop.appendChild(button);
+    }
+    document.body.appendChild(pop);
   }
-  document.body.appendChild(menu);
-  window.addEventListener("pointerdown", closeMenu, { once: true });
 }
 function renderRow(row) {
   const li = document.createElement("div");
@@ -1828,6 +2445,13 @@ function renderRow(row) {
   if (row.kind === "combatant") {
     li.dataset["combatantId"] = row.combatantId;
     if (row.isDefeated) li.classList.add(`${MODULE_ID}-tb-defeated`);
+    if (row.tokenMissing) {
+      li.classList.add(`${MODULE_ID}-tb-missing`);
+      const mark = document.createElement("span");
+      mark.className = `${MODULE_ID}-tb-missing-mark`;
+      mark.textContent = "?";
+      li.appendChild(mark);
+    }
     if (row.img) li.style.backgroundImage = `url("${row.img}")`;
     if (row.hp.shown !== "none" && row.hp.value !== null && row.hp.max !== null && row.hp.max > 0) {
       const bar = document.createElement("div");
@@ -1856,20 +2480,39 @@ function renderRow(row) {
     });
     li.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      openMenu(li, event.clientX, event.clientY);
+      openCombatantMenu(li, event.clientX, event.clientY);
     });
-    li.title = row.name;
+    li.title = row.tokenMissing ? `${row.name} (${game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Marker")})` : row.name;
   } else {
     li.dataset["groupId"] = row.groupId;
     li.style.borderColor = row.color;
-    if (row.img) li.style.backgroundImage = `url("${row.img}")`;
+    const stack = document.createElement("div");
+    stack.className = `${MODULE_ID}-tb-stack`;
+    row.portraits.forEach((src, index) => {
+      const face = document.createElement("div");
+      face.className = `${MODULE_ID}-tb-stack-img`;
+      face.style.backgroundImage = `url("${src}")`;
+      face.style.setProperty("--ti-stack-i", String(index));
+      stack.appendChild(face);
+    });
+    li.appendChild(stack);
     const badge = document.createElement("span");
     badge.className = `${MODULE_ID}-tb-count`;
-    badge.textContent = `x${row.memberCount}`;
+    badge.textContent = row.living < row.memberCount ? `x${row.living}/${row.memberCount}` : `x${row.memberCount}`;
     li.appendChild(badge);
+    const label = document.createElement("span");
+    label.className = `${MODULE_ID}-tb-group-name`;
+    label.textContent = row.name;
+    li.appendChild(label);
+    if (expandedGroups.has(row.groupId)) li.classList.add(`${MODULE_ID}-tb-expanded`);
     li.addEventListener("click", () => {
-      const combat = game.combats?.active ?? null;
-      if (combat) openGroupHud(combat, row.groupId);
+      if (expandedGroups.has(row.groupId)) expandedGroups.delete(row.groupId);
+      else expandedGroups.add(row.groupId);
+      render();
+    });
+    li.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      openGroupMenu(row.groupId, event.clientX, event.clientY);
     });
     li.title = row.name;
   }
@@ -1892,7 +2535,7 @@ function renderControls(combat) {
     el.appendChild(glyph);
     el.title = game.i18n.localize(key);
     el.addEventListener("click", () => {
-      if (isActiveGM()) void run();
+      if (isActiveGM()) void runSafe(`turn:${action}`, run);
     });
     bar.appendChild(el);
   };
@@ -1904,28 +2547,148 @@ function renderControls(combat) {
 }
 function render() {
   try {
-    const element = container();
+    const { bar, strip } = container();
+    applySize(bar, barSize);
     const combat = game.combats?.active ?? null;
     if (!combat || !enabled()) {
-      element.hidden = true;
-      element.replaceChildren();
+      bar.hidden = true;
+      strip.replaceChildren();
+      document.querySelectorAll(`.${POPOVER_CLASS}`).forEach((el) => el.remove());
       return;
     }
     const rows = buildTrackerView(toInput(combat), viewer());
-    element.replaceChildren(...rows.map(renderRow));
-    if (game.user?.isGM === true) element.appendChild(renderControls(combat));
-    element.hidden = false;
+    strip.replaceChildren(...rows.map(renderRow));
+    if (game.user?.isGM === true) strip.appendChild(renderControls(combat));
+    bar.hidden = false;
+    renderPopovers(strip, rows);
   } catch (error) {
     console.error(`${MODULE_ID} | top-bar render`, error);
   }
 }
+function closeAllPopovers() {
+  if (expandedGroups.size === 0) return;
+  expandedGroups.clear();
+  render();
+}
+function registerPopoverDismissal() {
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (expandedGroups.size === 0) return;
+      const target = event.target instanceof Node ? event.target : null;
+      if (target && target.closest?.(`.${POPOVER_CLASS}, [data-group-id]`)) return;
+      closeAllPopovers();
+    },
+    true
+  );
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeAllPopovers();
+  });
+}
 function registerTopBar() {
   Hooks.once("ready", render);
-  for (const hook of ["updateCombat", "updateCombatant", "createCombatant", "deleteCombatant", "deleteCombat"]) {
+  registerPopoverDismissal();
+  const redrawOn = [
+    "createCombat",
+    "updateCombat",
+    "deleteCombat",
+    "createCombatant",
+    "updateCombatant",
+    "deleteCombatant",
+    "createCombatantGroup",
+    "updateCombatantGroup",
+    "deleteCombatantGroup",
+    "updateActor",
+    "createToken",
+    "deleteToken"
+  ];
+  for (const hook of redrawOn) {
     Hooks.on(hook, () => {
       render();
     });
   }
+}
+
+// src/logic/leftovers.ts
+function findLeftovers(candidates2, deleted, tokenExists2) {
+  const keys = new Set(deleted.map((ref) => `${ref.sceneId}.${ref.tokenId}`));
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const candidate of candidates2) {
+    const { sceneId, tokenId } = candidate;
+    if (sceneId === null || tokenId === null) continue;
+    if (!keys.has(`${sceneId}.${tokenId}`)) continue;
+    if (tokenExists2(sceneId, tokenId)) continue;
+    const id = `${candidate.combatId}.${candidate.combatantId}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push({ combatId: candidate.combatId, combatantId: candidate.combatantId, name: candidate.name });
+  }
+  return result;
+}
+
+// src/adapter/leftovers.ts
+var FLUSH_DELAY_MS = 1e3;
+var queue = [];
+var timer = null;
+function escapeHtml3(value) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function tokenExists(sceneId, tokenId) {
+  return game.scenes?.get(sceneId)?.tokens.has(tokenId) === true;
+}
+function candidates() {
+  return (game.combats?.contents ?? []).flatMap(
+    (combat) => combat.turns.map((c) => ({
+      combatId: combat.id,
+      combatantId: c.id,
+      name: c.name,
+      sceneId: c.sceneId,
+      tokenId: c.tokenId
+    }))
+  );
+}
+async function flush() {
+  const deleted = queue;
+  queue = [];
+  timer = null;
+  const leftovers = findLeftovers(candidates(), deleted, tokenExists);
+  if (leftovers.length === 0) return;
+  const names = leftovers.map((l) => `<li>${escapeHtml3(l.name)}</li>`).join("");
+  const choice = await foundry.applications.api.DialogV2.wait({
+    window: { title: game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Title") },
+    content: `<p>${escapeHtml3(game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Body"))}</p><ul>${names}</ul>`,
+    buttons: [
+      { action: "remove", label: game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Remove"), default: true },
+      { action: "keep", label: game.i18n.localize("TACTICAL_INITIATIVE.Leftover.Keep") }
+    ],
+    rejectClose: false,
+    modal: true
+  });
+  if (choice !== "remove") return;
+  const byCombat = /* @__PURE__ */ new Map();
+  for (const leftover of leftovers) {
+    const combat = game.combats?.get(leftover.combatId);
+    if (!combat?.combatants.get(leftover.combatantId)) continue;
+    byCombat.set(leftover.combatId, [...byCombat.get(leftover.combatId) ?? [], leftover.combatantId]);
+  }
+  for (const [combatId, ids] of byCombat) {
+    const combat = game.combats?.get(combatId);
+    const still = ids.filter((id) => combat?.combatants.get(id));
+    if (combat && still.length > 0) await combat.deleteEmbeddedDocuments("Combatant", still);
+  }
+}
+function registerLeftoverSweep() {
+  Hooks.on("deleteToken", (token) => {
+    if (!isActiveGM()) return;
+    const sceneId = token.parent?.id ?? null;
+    if (sceneId === null) return;
+    queue.push({ sceneId, tokenId: token.id });
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => {
+      guard("leftover sweep", flush);
+    }, FLUSH_DELAY_MS);
+  });
 }
 
 // src/main.ts
@@ -1933,12 +2696,16 @@ Hooks.once("init", () => {
   registerSettings();
   registerQueryHandler();
   registerHooks();
+  registerGroupTurns();
   registerCombatEvents();
   registerTrackerContextMenu();
   registerActorDirectoryContextMenu();
   registerSheetTagControl();
   registerGroupUI();
+  registerGroupingKeybinding();
+  registerTokenHudButton();
   registerTopBar();
+  registerLeftoverSweep();
   console.log(`${MODULE_ID} | initialized`);
 });
 //# sourceMappingURL=main.js.map

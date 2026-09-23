@@ -37,20 +37,6 @@ select.tactical-initiative-tag-select {
   margin: 0.15em 0;
 }
 
-/* Combat tracker: the colored group-membership tag on a grouped row. */
-.tactical-initiative-group-tag {
-  display: inline-block;
-  margin-left: 0.4em;
-  padding: 0 0.4em;
-  border-radius: 0.6em;
-  font-size: var(--font-size-10, 10px);
-  line-height: 1.5;
-  color: #fff;
-  text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
-  vertical-align: middle;
-  white-space: nowrap;
-}
-
 /* Group control HUD (B1b). */
 .tactical-initiative-group-hud-members {
   list-style: none;
@@ -82,36 +68,69 @@ select.tactical-initiative-tag-select {
   width: 100%;
 }
 
-/* Top-bar combat tracker (B2). */
+/* Top-bar combat tracker (B2). Every size scales with --ti-portrait (default 44px). */
 .tactical-initiative-top-bar {
+  --ti-portrait: 44px;
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 0.25em;
-  padding: 0.2em 0.4em;
-  margin: 0 auto;
+  width: fit-content;
   max-width: 90vw;
-  overflow-x: auto;
+  margin: 0 auto;
+  padding-right: 14px;
   pointer-events: all;
   background: rgba(0, 0, 0, 0.55);
   border-radius: 0 0 0.4em 0.4em;
 }
 
+.tactical-initiative-tb-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.25em;
+  padding: calc(var(--ti-portrait) * 12 / 44 + 3px) 0.4em 0.2em;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.tactical-initiative-tb-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: ns-resize;
+  touch-action: none;
+  border-bottom-right-radius: 0.4em;
+  background: linear-gradient(
+    135deg,
+    transparent 55%,
+    rgba(255, 255, 255, 0.55) 55%,
+    rgba(255, 255, 255, 0.55) 65%,
+    transparent 65%,
+    transparent 78%,
+    rgba(255, 255, 255, 0.55) 78%,
+    rgba(255, 255, 255, 0.55) 88%,
+    transparent 88%
+  );
+}
+
+.tactical-initiative-tb-grip:focus-visible {
+  outline: 2px solid var(--color-warning, #d9a520);
+}
+
 .tactical-initiative-tb-row {
   position: relative;
-  width: 44px;
-  height: 44px;
+  width: var(--ti-portrait);
+  height: var(--ti-portrait);
   flex: 0 0 auto;
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-radius: 4px;
+  border: calc(var(--ti-portrait) / 22) solid rgba(255, 255, 255, 0.4);
+  border-radius: calc(var(--ti-portrait) / 11);
   background-size: cover;
   background-position: center;
   cursor: pointer;
 }
 
 .tactical-initiative-tb-current {
-  outline: 2px solid var(--color-warning, #d9a520);
-  transform: translateY(-3px) scale(1.08);
+  outline: calc(var(--ti-portrait) / 22) solid var(--color-warning, #d9a520);
+  transform: translateY(calc(var(--ti-portrait) * -3 / 44)) scale(1.08);
 }
 
 .tactical-initiative-tb-defeated {
@@ -122,40 +141,38 @@ select.tactical-initiative-tag-select {
   position: absolute;
   left: 0;
   bottom: 0;
-  height: 4px;
+  height: calc(var(--ti-portrait) / 11);
   background: #c0392b;
 }
 
 .tactical-initiative-tb-hp-text {
   position: absolute;
-  bottom: 4px;
+  bottom: calc(var(--ti-portrait) / 11);
   width: 100%;
   text-align: center;
-  font-size: 9px;
+  font-size: max(9px, calc(var(--ti-portrait) * 9 / 44));
   color: #fff;
   text-shadow: 0 0 2px #000;
 }
 
-.tactical-initiative-tb-count {
+.tactical-initiative-tb-count,
+.tactical-initiative-tb-cond {
   position: absolute;
-  top: -6px;
-  right: -6px;
-  padding: 0 3px;
-  border-radius: 6px;
-  background: #222;
+  top: calc(var(--ti-portrait) * -6 / 44);
+  padding: 0 calc(var(--ti-portrait) * 3 / 44);
+  border-radius: calc(var(--ti-portrait) * 6 / 44);
   color: #fff;
-  font-size: 9px;
+  font-size: max(9px, calc(var(--ti-portrait) * 9 / 44));
+}
+
+.tactical-initiative-tb-count {
+  right: calc(var(--ti-portrait) * -6 / 44);
+  background: #222;
 }
 
 .tactical-initiative-tb-cond {
-  position: absolute;
-  top: -6px;
-  left: -6px;
-  padding: 0 3px;
-  border-radius: 6px;
+  left: calc(var(--ti-portrait) * -6 / 44);
   background: #6a1b9a;
-  color: #fff;
-  font-size: 9px;
 }
 
 .tactical-initiative-tb-controls {
@@ -165,9 +182,17 @@ select.tactical-initiative-tag-select {
   margin-left: 0.5em;
 }
 
+.tactical-initiative-tb-btn {
+  width: calc(var(--ti-portrait) * 0.6);
+  height: calc(var(--ti-portrait) * 0.6);
+  padding: 0;
+  line-height: 1;
+  font-size: max(9px, calc(var(--ti-portrait) * 0.3));
+}
+
 .tactical-initiative-tb-round {
   color: #fff;
-  font-size: 11px;
+  font-size: max(9px, calc(var(--ti-portrait) / 4));
   margin-right: 0.3em;
 }
 
@@ -194,4 +219,102 @@ select.tactical-initiative-tag-select {
 
 .tactical-initiative-tb-menu-item:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* Top-bar group cell: stacked member portraits (map grouping, v1.5.0-rc2). */
+.tactical-initiative-tb-group {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.tactical-initiative-tb-stack {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 2px;
+}
+
+.tactical-initiative-tb-stack-img {
+  position: absolute;
+  width: 70%;
+  height: 70%;
+  left: calc(var(--ti-stack-i, 0) * 15%);
+  top: calc(var(--ti-stack-i, 0) * 15%);
+  background-size: cover;
+  background-position: center;
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  border-radius: 3px;
+}
+
+.tactical-initiative-tb-group-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
+  font-size: max(9px, calc(var(--ti-portrait) * 9 / 44));
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.tactical-initiative-tb-expanded {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+
+.tactical-initiative-tb-members {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 0.2em;
+  background: #1b1b1b;
+  border: 2px solid #666;
+  border-radius: 4px;
+  pointer-events: all;
+}
+
+.tactical-initiative-tb-members-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.1em 0.4em;
+  background: transparent;
+  border: none;
+  color: #eee;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tactical-initiative-tb-members-item img {
+  width: 24px;
+  height: 24px;
+  border: none;
+  object-fit: cover;
+}
+
+.tactical-initiative-tb-members-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Combatant whose token was deleted but was kept in combat. */
+.tactical-initiative-tb-missing {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.tactical-initiative-tb-missing-mark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: bold;
+  font-size: max(12px, calc(var(--ti-portrait) * 0.5));
+  text-shadow: 0 0 3px #000;
 }

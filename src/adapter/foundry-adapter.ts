@@ -7,6 +7,7 @@
 
 import { FLAGS, MODULE_ID, V14_GENERATION, type Choice } from "../constants";
 import { effectChangesFor, toV14Changes } from "../logic/effects";
+import { groupIdOf } from "../logic/group";
 import type { CombatantView, FoundryPort } from "../types";
 import { requestChoiceFromOwner } from "./player-query";
 import { readCombatantTag } from "./tags";
@@ -54,7 +55,9 @@ export class FoundryAdapter implements FoundryPort {
   }
 
   public async listCombatants(_combatId: string): Promise<CombatantView[]> {
-    return this.combat.combatants.contents.map((combatant): CombatantView => {
+    // A combatant with no actor (e.g. kept after its unlinked token was deleted)
+    // cannot roll; skip it so it cannot break the reroll for everyone after it.
+    return this.combat.combatants.contents.filter((combatant) => combatant.actor !== null).map((combatant): CombatantView => {
       const slot = combatant.getFlag(MODULE_ID, FLAGS.BOSS_SLOT);
       const order = combatant.getFlag(MODULE_ID, FLAGS.BOSS_ORDER);
       const isBossSlot = slot === "start" || slot === "end";
@@ -66,7 +69,7 @@ export class FoundryAdapter implements FoundryPort {
         isDefeated: combatant.isDefeated,
         bossSlot: isBossSlot ? slot : null,
         bossRank: isBossSlot && typeof order === "number" ? order : null,
-        groupId: typeof combatant.group === "string" && combatant.group ? combatant.group : null
+        groupId: groupIdOf(combatant)
       };
     });
   }
@@ -151,7 +154,7 @@ export class FoundryAdapter implements FoundryPort {
   public async rollGroupInitiative(groupId: string): Promise<number> {
     // Roll once using a representative member so init bonuses apply, then share it.
     const member = this.combat.combatants.find(
-      (c) => (typeof c.group === "string" ? c.group : null) === groupId
+      (c) => groupIdOf(c) === groupId && c.actor !== null
     );
     if (!member) return 0;
     const roll = this.buildInitiativeRoll(member);
