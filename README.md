@@ -351,17 +351,29 @@ v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
     HP bars, round label and turn buttons all scale together (32-128px). Change HP on a
     combatant mid-drag: the drag continues. Reload: the size persists. Log in as the same user
     on another browser: same size. Double-click the grip: back to 44px. Focus the grip (Tab)
-    and use ArrowUp/ArrowDown/Home.
+    and use ArrowUp/ArrowDown/Home. At 128px the current-turn portrait's count and condition
+    badges are not clipped at the top.
 14. **Size footprint.** At 128px with 10+ combatants the strip scrolls horizontally and does
     not cover notifications or scene navigation.
 15. **Normal delete, no module prompt.** Delete an in-combat token (Delete key, confirm core's
     dialog): the combatant disappears and NO "Combatants without a token" dialog appears.
-16. **Leftover sweep.** Reproduce the original leftover case (see the spec's P0 probe results).
-    Within about a second the dialog lists the leftover(s). Remove: they leave the tracker.
-    Keep: the portrait turns dashed with a "?" and its tooltip says "token deleted"; the next
-    round's reroll still gives everyone else initiative.
+16. **Leftover sweep.** Force a leftover from the F12 console as GM on the viewed scene (a
+    combat must be active):
+    `const a = game.actors.contents[0]; await game.combat.createEmbeddedDocuments("Combatant", [{ tokenId: "tiFakeToken00001", sceneId: canvas.scene.id, actorId: a.id }]); Hooks.callAll("deleteToken", { id: "tiFakeToken00001", parent: { id: canvas.scene.id } }, {}, game.user.id);`
+    Within about a second the "Combatants without a token" dialog lists it. Also try to
+    reproduce the DM's original leftover (plain GM delete) and note the result in the spec's
+    P0 probe section. Remove: they leave the tracker. Keep: the portrait turns dashed with a
+    "?" and its tooltip says "token deleted"; the next round's reroll still gives everyone
+    else initiative. While a kept combatant exists, log
+    `game.combat.combatants.find(c => c.tokenId === 'tiFakeToken00001')?.actor` and note
+    whether it is null.
 17. **Boss delete.** Delete a Boss token: no end-slot entry survives (or, if one does, the
     dialog offers it).
+18. **Multi-select delete.** Select 3 in-combat tokens and delete them together: their
+    combatants disappear and at most one "Combatants without a token" dialog appears (none if
+    core removed everything).
+19. **Player-initiated delete.** A player deletes a token they own that is in combat: the
+    combatant disappears on the GM's screen and the GM gets no module prompt.
 18. **Restore a deleted mob.** Kill a mob (F4 hides it and whispers Restore), delete its token,
     then click Restore: a warning says the token no longer exists.
 
