@@ -24,8 +24,8 @@ function options(): GripOptions {
   };
 }
 
-function pointer(type: string, clientY: number): void {
-  grip.dispatchEvent(new PointerEvent(type, { bubbles: true, clientY, pointerId: 1 }));
+function pointer(type: string, clientY: number, pointerId: number = 1): void {
+  grip.dispatchEvent(new PointerEvent(type, { bubbles: true, clientY, pointerId }));
 }
 
 beforeEach(() => {
@@ -123,5 +123,23 @@ describe("attachGrip", () => {
     pointer("pointerdown", 100);
     pointer("pointermove", 120);
     expect(grip.getAttribute("aria-valuenow")).toBe("64");
+  });
+
+  it("a second pointer during a drag is ignored", () => {
+    pointer("pointerdown", 100, 1);
+    pointer("pointerdown", 300, 2);
+    pointer("pointermove", 320, 2);
+    pointer("pointermove", 110, 1);
+    pointer("pointerup", 110, 1);
+    expect(previews).toEqual([54]);
+    expect(commits).toEqual([54]);
+  });
+
+  it("pointerup from another pointer does not end the drag", () => {
+    pointer("pointerdown", 100, 1);
+    pointer("pointerup", 100, 2);
+    pointer("pointermove", 120, 1);
+    pointer("pointerup", 120, 1);
+    expect(commits).toEqual([64]);
   });
 });

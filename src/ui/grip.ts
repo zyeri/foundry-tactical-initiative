@@ -35,6 +35,7 @@ export interface GripOptions {
  */
 export function attachGrip(grip: HTMLElement, options: GripOptions): () => void {
   let dragging = false;
+  let activePointer: number | null = null;
   let startY = 0;
   let startSize = 0;
   let current = 0;
@@ -59,9 +60,11 @@ export function attachGrip(grip: HTMLElement, options: GripOptions): () => void 
   };
 
   const onDown = (event: PointerEvent): void => {
+    if (dragging) return;
     event.preventDefault();
     event.stopPropagation();
     dragging = true;
+    activePointer = event.pointerId;
     startY = event.clientY;
     startSize = options.read();
     current = startSize;
@@ -75,14 +78,17 @@ export function attachGrip(grip: HTMLElement, options: GripOptions): () => void 
   };
 
   const onMove = (event: PointerEvent): void => {
-    if (!dragging) return;
+    if (!dragging || event.pointerId !== activePointer) return;
     current = options.clamp(startSize + (event.clientY - startY));
     apply(current);
   };
 
-  const onEnd = (): void => {
+  const onEnd = (event?: Event): void => {
     if (!dragging) return;
+    const pointerEvent = event as PointerEvent | undefined;
+    if (pointerEvent?.pointerId !== undefined && pointerEvent.pointerId !== activePointer) return;
     dragging = false;
+    activePointer = null;
     if (current !== startSize) options.commit(current);
   };
 
@@ -90,6 +96,7 @@ export function attachGrip(grip: HTMLElement, options: GripOptions): () => void 
     event.preventDefault();
     event.stopPropagation();
     dragging = false;
+    activePointer = null;
     set(options.defaultSize);
   };
 
