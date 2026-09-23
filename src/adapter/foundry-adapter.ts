@@ -154,7 +154,7 @@ export class FoundryAdapter implements FoundryPort {
   public async rollGroupInitiative(groupId: string): Promise<number> {
     // Roll once using a representative member so init bonuses apply, then share it.
     const member = this.combat.combatants.find(
-      (c) => groupIdOf(c) === groupId
+      (c) => groupIdOf(c) === groupId && c.actor !== null
     );
     if (!member) return 0;
     const roll = this.buildInitiativeRoll(member);
