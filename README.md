@@ -374,7 +374,7 @@ v14 + dnd5e 5.3 only. Run the P0 probe (spec) first.
     core removed everything).
 19. **Player-initiated delete.** A player deletes a token they own that is in combat: the
     combatant disappears on the GM's screen and the GM gets no module prompt.
-18. **Restore a deleted mob.** Kill a mob (F4 hides it and whispers Restore), delete its token,
+20. **Restore a deleted mob.** Kill a mob (F4 hides it and whispers Restore), delete its token,
     then click Restore: a warning says the token no longer exists.
 
 ## Development
