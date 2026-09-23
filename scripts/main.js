@@ -792,7 +792,7 @@ var FoundryAdapter = class {
   }
   async rollGroupInitiative(groupId) {
     const member = this.combat.combatants.find(
-      (c) => groupIdOf(c) === groupId
+      (c) => groupIdOf(c) === groupId && c.actor !== null
     );
     if (!member) return 0;
     const roll = this.buildInitiativeRoll(member);
@@ -2230,6 +2230,7 @@ function attachGrip(grip, options) {
     else if (event.key === "Home") set(options.defaultSize);
     else return;
     event.preventDefault();
+    event.stopPropagation();
   };
   grip.addEventListener("pointerdown", onDown);
   grip.addEventListener("pointermove", onMove);
