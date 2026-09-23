@@ -30,6 +30,8 @@ export interface TrackerCombatant {
   ownedByViewer: boolean;
   hp: { value: number | null; max: number | null };
   conditions: readonly string[];
+  /** True when the combatant's token no longer exists on its scene. */
+  tokenMissing: boolean;
 }
 
 /** Group metadata (name + tag color) for collapsed group rows. */
@@ -77,6 +79,8 @@ export type TrackerRow =
       conditions: readonly string[];
       isCurrent: boolean;
       isDefeated: boolean;
+      /** True when the combatant's token no longer exists on its scene. */
+      tokenMissing: boolean;
     }
   | {
       kind: "group";
@@ -172,7 +176,8 @@ export function buildTrackerView(input: TrackerInput, viewer: Viewer): TrackerRo
         hp: hpFor(combatant, viewer),
         conditions: combatant.conditions,
         isCurrent: combatant.id === input.currentId,
-        isDefeated: combatant.isDefeated
+        isDefeated: combatant.isDefeated,
+        tokenMissing: combatant.tokenMissing
       });
     }
   }

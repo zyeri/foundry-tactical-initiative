@@ -57,7 +57,11 @@ function toCombatant(combatant: FoundryCombatant): TrackerCombatant {
     isDefeated: combatant.isDefeated,
     ownedByViewer: owned,
     hp: { value: typeof hp?.value === "number" ? hp.value : null, max: typeof hp?.max === "number" ? hp.max : null },
-    conditions: actor?.statuses ? [...actor.statuses] : []
+    conditions: actor?.statuses ? [...actor.statuses] : [],
+    tokenMissing:
+      combatant.sceneId !== null &&
+      combatant.tokenId !== null &&
+      game.scenes?.get(combatant.sceneId)?.tokens.has(combatant.tokenId) === false
   };
 }
 

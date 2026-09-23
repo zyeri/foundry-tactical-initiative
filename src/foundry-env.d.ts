@@ -216,6 +216,8 @@ interface FoundryGame {
   readonly keybindings: {
     register(namespace: string, action: string, data: object): void;
   };
+  /** World scenes (subset): token existence lookup. */
+  readonly scenes?: FoundryCollection<{ id: string; tokens: { has(id: string): boolean } }> | null;
 }
 
 /** A DialogV2 button definition. */
